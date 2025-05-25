@@ -8,7 +8,7 @@ import argparse
 import json
 import sys
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any
 import requests
 from litellm import completion
@@ -60,9 +60,13 @@ class ActivityWatchClient:
     ) -> List[Dict]:
         """Get events from a specific bucket within time range"""
         try:
+            # Convert to UTC and format as ISO8601
+            start_utc = start_time.astimezone(timezone.utc)
+            end_utc = end_time.astimezone(timezone.utc)
+            
             params = {
-                "start": start_time.isoformat(),
-                "end": end_time.isoformat(),
+                "start": start_utc.isoformat().replace('+00:00', 'Z'),
+                "end": end_utc.isoformat().replace('+00:00', 'Z'),
                 "limit": limit,
             }
             response = requests.get(
@@ -150,13 +154,13 @@ Please respond with a clean, structured summary of time blocks in the following 
             return None
 
 
-def get_time_choices(hours_back: int = 24) -> List[datetime]:
-    """Generate list of hourly timestamps for user selection"""
-    now = datetime.now()
+def get_time_choices(hours_back: int = 48) -> List[datetime]:
+    """Generate list of 2-hour gapped timestamps for user selection"""
+    now = datetime.now().replace(tzinfo=timezone.utc)
     current_hour = now.replace(minute=0, second=0, microsecond=0)
 
     choices = []
-    for i in range(hours_back + 1):
+    for i in range(0, hours_back + 1, 2):  # Step by 2 hours
         time_choice = current_hour - timedelta(hours=i)
         choices.append(time_choice)
 
@@ -175,7 +179,7 @@ def display_time_choices(choices: List[datetime]) -> datetime:
     table.add_column("Relative", style="green")
 
     for i, choice in enumerate(choices):
-        now = datetime.now()
+        now = datetime.now().replace(tzinfo=timezone.utc)
         diff = now - choice
 
         if diff.total_seconds() < 3600:
@@ -207,15 +211,12 @@ def display_time_choices(choices: List[datetime]) -> datetime:
     "--model", default=None, help="LLM model to use (default: from env or gpt-4)"
 )
 @click.option(
-    "--duration", default=1, type=int, help="Duration in hours to analyze (default: 1)"
-)
-@click.option(
     "--aw-url",
     default=None,
     help="ActivityWatch server URL (default: from env or localhost:5600)",
 )
 @click.option("--output", "-o", help="Output file to save results (optional)")
-def main(model: str, duration: int, aw_url: str, output: Optional[str]):
+def main(model: str, aw_url: str, output: Optional[str]):
     """ActivityWatch Timeline Processor CLI"""
 
     console.print("[bold green]ActivityWatch Timeline Processor[/bold green]")
@@ -261,14 +262,17 @@ def main(model: str, duration: int, aw_url: str, output: Optional[str]):
     console.print(table)
 
     # Get time selection
-    time_choices = get_time_choices(24)
+    time_choices = get_time_choices(48)
     start_time = display_time_choices(time_choices)
-    end_time = start_time + timedelta(hours=duration)
+    end_time = datetime.now().replace(tzinfo=timezone.utc)
+
+    duration_timedelta = end_time - start_time
+    duration_hours = duration_timedelta.total_seconds() / 3600
 
     console.print(f"\n[bold]Selected time range:[/bold]")
     console.print(f"Start: {start_time.strftime('%Y-%m-%d %H:%M')}")
     console.print(f"End: {end_time.strftime('%Y-%m-%d %H:%M')}")
-    console.print(f"Duration: {duration} hour(s)")
+    console.print(f"Duration: {duration_hours:.1f} hour(s)")
 
     if not Confirm.ask("\nProceed with fetching timeline data?"):
         console.print("Cancelled.")
