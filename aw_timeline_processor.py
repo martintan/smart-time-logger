@@ -18,10 +18,22 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from activity_watch_client import ActivityWatchClient
+from entry import TimeEntryList
 
 load_dotenv()
 
 console = Console()
+
+# Template for the full LLM prompt
+FULL_PROMPT_TEMPLATE = """
+{base_prompt}
+
+**User's Context:**
+{user_context}
+
+**ActivityWatch Time Entries (JSON Array):**
+{timeline_data}
+""".strip()
 
 
 class TimelineProcessor:
@@ -32,68 +44,64 @@ class TimelineProcessor:
 
     def consolidate_timeline(
         self, timeline_data: List[Dict], start_time: datetime, end_time: datetime
-    ) -> str:
+    ) -> Optional[TimeEntryList]:
         """Use LLM to consolidate and summarize timeline data"""
 
-        # Prepare the timeline data for the LLM
+        # Read the prompt from PROMPT.md
+        try:
+            with open("PROMPT.md", "r") as f:
+                base_prompt = f.read()
+        except FileNotFoundError:
+            console.print("[red]PROMPT.md file not found[/red]")
+            return None
+
+        # Read optional user context from ACTIVITY.md
+        user_context = ""
+        try:
+            with open("ACTIVITY.md", "r") as f:
+                user_context = f.read()
+        except FileNotFoundError:
+            user_context = "No additional user context provided."
+
+        # Prepare the timeline data in the format expected by the prompt
         formatted_events = []
         for event in timeline_data:
-            timestamp = datetime.fromisoformat(
-                event["timestamp"].replace("Z", "+00:00")
-            )
-            duration = event.get("duration", 0)
-            data = event.get("data", {})
-
-            # Format event info
-            event_info = {
-                "time": timestamp.strftime("%H:%M:%S"),
-                "duration_seconds": duration,
-                "duration_minutes": round(duration / 60, 1),
-                "data": data,
+            # Keep the original structure as specified in the prompt
+            formatted_event = {
+                "id": event.get("id", 0),
+                "timestamp": event["timestamp"],
+                "duration": event.get("duration", 0),
+                "data": event.get("data", {}),
             }
-            formatted_events.append(event_info)
+            formatted_events.append(formatted_event)
 
-        # Create prompt for LLM
-        prompt = f"""
-You are a time tracking assistant. I have raw activity data from ActivityWatch for the time period {start_time.strftime('%Y-%m-%d %H:%M')} to {end_time.strftime('%Y-%m-%d %H:%M')}.
-
-Please analyze this timeline data and consolidate it into clean, grouped time blocks that would be suitable for inputting into a time tracking platform. 
-
-Guidelines:
-1. Group similar activities together
-2. Ignore very short activities (< 2 minutes) unless they're significant
-3. Focus on productive work activities
-4. Create clear, descriptive labels for each time block
-5. Merge fragmented time spent on the same application/task
-6. Provide start time, end time, duration, and activity description for each block
-
-Here's the raw timeline data:
-{json.dumps(formatted_events, indent=2)}
-
-Please respond with a clean, structured summary of time blocks in the following JSON format:
-{{
-  "summary": "Brief overview of the time period",
-  "time_blocks": [
-    {{
-      "start_time": "HH:MM",
-      "end_time": "HH:MM", 
-      "duration_minutes": X,
-      "activity": "Clear description of what was being done",
-      "category": "Work/Break/Communication/etc"
-    }}
-  ],
-  "total_tracked_time": "X minutes"
-}}
-"""
+        # Create the full prompt with user context and activity watch data
+        full_prompt = FULL_PROMPT_TEMPLATE.format(
+            base_prompt=base_prompt,
+            user_context=user_context,
+            timeline_data=json.dumps(formatted_events, indent=2),
+        )
 
         try:
             response = completion(
                 model=self.model,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": full_prompt}],
                 temperature=0.3,
+                response_format={"type": "json_object"},
             )
 
-            return response.choices[0].message.content
+            # Parse the JSON response and validate it with TimeEntryList
+            json_response = json.loads(response.choices[0].message.content)
+
+            # Convert to TimeEntryList format if needed
+            if "entries" in json_response:
+                return TimeEntryList.model_validate(json_response)
+            elif isinstance(json_response, list):
+                return TimeEntryList(entries=json_response)
+            else:
+                console.print(f"[red]Unexpected response format from LLM[/red]")
+                return None
+
         except Exception as e:
             console.print(f"[red]Error processing with LLM: {e}[/red]")
             return None
@@ -274,7 +282,7 @@ def main(model: str, aw_url: str, output: Optional[str]):
         console.print("Timeline data fetched but not processed.")
         sys.exit(0)
 
-    console.print(f"\n[bold]Processing timeline with {model}...[/bold]")
+    console.print(f"\n[bold]Processing timeline with {processor.model}...[/bold]")
 
     with console.status("[bold green]LLM processing timeline..."):
         result = processor.consolidate_timeline(all_events, start_time, end_time)
@@ -283,13 +291,24 @@ def main(model: str, aw_url: str, output: Optional[str]):
         console.print("\n[bold green]✓ Timeline processed successfully![/bold green]")
         console.print("\n" + "=" * 50)
         console.print("[bold cyan]Processed Timeline:[/bold cyan]")
-        console.print(result)
+
+        # Display the structured results
+        for entry in result.entries:
+            console.print(f"\n[cyan]{entry.description}[/cyan]")
+            console.print(
+                f"  Time: {entry.start_date} {entry.start_time} - {entry.end_date} {entry.end_time}"
+            )
+            console.print(f"  Duration: {entry.duration}")
+            if entry.project:
+                console.print(f"  Project: {entry.project}")
+            if entry.task:
+                console.print(f"  Task: {entry.task}")
 
         # Save to file if requested
         if output:
             try:
                 with open(output, "w") as f:
-                    f.write(result)
+                    f.write(result.model_dump_json(indent=2))
                 console.print(f"\n[green]✓ Results saved to {output}[/green]")
             except Exception as e:
                 console.print(f"[red]Error saving to file: {e}[/red]")

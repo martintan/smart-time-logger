@@ -1,4 +1,5 @@
 env
 .env
 CLAUDE.md
+ACTIVITY.md
 __pycache__
