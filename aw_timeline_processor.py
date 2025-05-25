@@ -63,15 +63,19 @@ class ActivityWatchClient:
             # Convert to UTC and format as ISO8601
             start_utc = start_time.astimezone(timezone.utc)
             end_utc = end_time.astimezone(timezone.utc)
-            
+
             params = {
-                "start": start_utc.isoformat().replace('+00:00', 'Z'),
-                "end": end_utc.isoformat().replace('+00:00', 'Z'),
+                "start": start_utc.isoformat().replace("+00:00", "Z"),
+                "end": end_utc.isoformat().replace("+00:00", "Z"),
                 "limit": limit,
             }
-            response = requests.get(
-                f"{self.api_url}/buckets/{bucket_id}/events", params=params
-            )
+
+            url = f"{self.api_url}/buckets/{bucket_id}/events"
+            param_string = "&".join([f"{k}={v}" for k, v in params.items()])
+            curl_cmd = f'curl "{url}?{param_string}"'
+            console.print(f"[dim]DEBUG CURL: {curl_cmd}[/dim]")
+
+            response = requests.get(url, params=params)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -156,7 +160,7 @@ Please respond with a clean, structured summary of time blocks in the following 
 
 def get_time_choices(hours_back: int = 48) -> List[datetime]:
     """Generate list of 2-hour gapped timestamps for user selection"""
-    now = datetime.now().replace(tzinfo=timezone.utc)
+    now = datetime.now()  # Local timezone
     current_hour = now.replace(minute=0, second=0, microsecond=0)
 
     choices = []
@@ -179,7 +183,7 @@ def display_time_choices(choices: List[datetime]) -> datetime:
     table.add_column("Relative", style="green")
 
     for i, choice in enumerate(choices):
-        now = datetime.now().replace(tzinfo=timezone.utc)
+        now = datetime.now()
         diff = now - choice
 
         if diff.total_seconds() < 3600:
@@ -264,7 +268,7 @@ def main(model: str, aw_url: str, output: Optional[str]):
     # Get time selection
     time_choices = get_time_choices(48)
     start_time = display_time_choices(time_choices)
-    end_time = datetime.now().replace(tzinfo=timezone.utc)
+    end_time = datetime.now()  # Local timezone
 
     duration_timedelta = end_time - start_time
     duration_hours = duration_timedelta.total_seconds() / 3600
