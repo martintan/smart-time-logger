@@ -4,83 +4,24 @@ ActivityWatch Timeline Processor
 A CLI tool to fetch timeline data from ActivityWatch API and process it with LLM
 """
 
-import argparse
 import json
-import sys
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Any
-import requests
-from litellm import completion
+import sys
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
+
 import click
-from rich.console import Console
-from rich.table import Table
-from rich.prompt import Prompt, Confirm
-from rich import print as rprint
 from dotenv import load_dotenv
+from litellm import completion
+from rich.console import Console
+from rich.prompt import Confirm, Prompt
+from rich.table import Table
+
+from activity_watch_client import ActivityWatchClient
 
 load_dotenv()
 
 console = Console()
-
-
-class ActivityWatchClient:
-    """Client for interacting with ActivityWatch API"""
-
-    def __init__(self, base_url: str = None):
-        self.base_url = (
-            base_url or os.getenv("AW_SERVER_URL", "http://localhost:5600")
-        ).rstrip("/")
-        self.api_url = f"{self.base_url}/api/0"
-
-    def test_connection(self) -> bool:
-        """Test connection to ActivityWatch server"""
-        try:
-            response = requests.get(f"{self.api_url}/info", timeout=5)
-            return response.status_code == 200
-        except requests.exceptions.RequestException:
-            return False
-
-    def get_buckets(self) -> Dict[str, Any]:
-        """Get all available buckets"""
-        try:
-            response = requests.get(f"{self.api_url}/buckets")
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            console.print(f"[red]Error fetching buckets: {e}[/red]")
-            return {}
-
-    def get_events(
-        self,
-        bucket_id: str,
-        start_time: datetime,
-        end_time: datetime,
-        limit: int = 1000,
-    ) -> List[Dict]:
-        """Get events from a specific bucket within time range"""
-        try:
-            # Convert to UTC and format as ISO8601
-            start_utc = start_time.astimezone(timezone.utc)
-            end_utc = end_time.astimezone(timezone.utc)
-
-            params = {
-                "start": start_utc.isoformat().replace("+00:00", "Z"),
-                "end": end_utc.isoformat().replace("+00:00", "Z"),
-                "limit": limit,
-            }
-
-            url = f"{self.api_url}/buckets/{bucket_id}/events"
-            param_string = "&".join([f"{k}={v}" for k, v in params.items()])
-            curl_cmd = f'curl "{url}?{param_string}"'
-            console.print(f"[dim]DEBUG CURL: {curl_cmd}[/dim]")
-
-            response = requests.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            console.print(f"[red]Error fetching events from {bucket_id}: {e}[/red]")
-            return []
 
 
 class TimelineProcessor:
@@ -158,15 +99,40 @@ Please respond with a clean, structured summary of time blocks in the following 
             return None
 
 
-def get_time_choices(hours_back: int = 48) -> List[datetime]:
-    """Generate list of 2-hour gapped timestamps for user selection"""
+def get_time_choices() -> List[datetime]:
+    """Generate list of 2-hour gapped timestamps for current work day"""
     now = datetime.now()  # Local timezone
     current_hour = now.replace(minute=0, second=0, microsecond=0)
 
+    # Get work day configuration from environment
+    day_start_hour = int(os.getenv("WORK_DAY_START_HOUR", "0"))  # Default: midnight
+    day_end_hour = int(os.getenv("WORK_DAY_END_HOUR", "4"))  # Default: 4 AM next day
+
+    # Determine the earliest time to include based on current time and work day boundaries
+    if current_hour.hour < day_end_hour:
+        # Current time is within extended work day (e.g., 1:30 AM)
+        # Include times from yesterday's work day start
+        work_day_start = (current_hour - timedelta(days=1)).replace(
+            hour=day_start_hour, minute=0, second=0, microsecond=0
+        )
+    else:
+        # Current time is in new work day (e.g., 10 AM)
+        # Only include times from today's work day start
+        work_day_start = current_hour.replace(
+            hour=day_start_hour, minute=0, second=0, microsecond=0
+        )
+
     choices = []
-    for i in range(0, hours_back + 1, 2):  # Step by 2 hours
-        time_choice = current_hour - timedelta(hours=i)
+    time_choice = current_hour
+
+    # Go back in 2-hour increments until we reach start of relevant work day
+    while time_choice >= work_day_start:
         choices.append(time_choice)
+        time_choice = time_choice - timedelta(hours=2)
+
+    # Add start of work day if not already included
+    if work_day_start not in choices:
+        choices.append(work_day_start)
 
     return choices
 
@@ -266,14 +232,14 @@ def main(model: str, aw_url: str, output: Optional[str]):
     console.print(table)
 
     # Get time selection
-    time_choices = get_time_choices(48)
+    time_choices = get_time_choices()
     start_time = display_time_choices(time_choices)
     end_time = datetime.now()  # Local timezone
 
     duration_timedelta = end_time - start_time
     duration_hours = duration_timedelta.total_seconds() / 3600
 
-    console.print(f"\n[bold]Selected time range:[/bold]")
+    console.print("\n[bold]Selected time range:[/bold]")
     console.print(f"Start: {start_time.strftime('%Y-%m-%d %H:%M')}")
     console.print(f"End: {end_time.strftime('%Y-%m-%d %H:%M')}")
     console.print(f"Duration: {duration_hours:.1f} hour(s)")
