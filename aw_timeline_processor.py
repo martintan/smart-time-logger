@@ -8,17 +8,18 @@ import json
 import os
 import sys
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import click
 from dotenv import load_dotenv
 from litellm import completion
 from rich.console import Console
-from rich.prompt import Confirm, Prompt
+from rich.prompt import Confirm
 from rich.table import Table
 
 from activity_watch_client import ActivityWatchClient
 from entry import TimeEntryList
+from toggl_client import TogglClient
 
 load_dotenv()
 
@@ -34,6 +35,9 @@ FULL_PROMPT_TEMPLATE = """
 **User's Context:**
 {user_context}
 
+**Existing Toggl Time Entries (JSON Array):**
+{toggl_entries}
+
 **ActivityWatch Time Entries (JSON Array):**
 {timeline_data}
 """.strip()
@@ -44,19 +48,25 @@ class TimelineProcessor:
 
     def __init__(self, model: str = None, min_duration_minutes: int = None):
         self.model = model or os.getenv("LLM_MODEL", "gpt-4.1")
-        self.min_duration_minutes = min_duration_minutes or int(os.getenv("MIN_ACTIVITY_DURATION_MINUTES", "5"))
+        self.min_duration_minutes = min_duration_minutes or int(
+            os.getenv("MIN_ACTIVITY_DURATION_MINUTES", "5")
+        )
 
     def consolidate_timeline(
-        self, timeline_data: List[Dict], start_time: datetime, end_time: datetime
+        self,
+        timeline_data: List[Dict],
+        toggl_entries: List[Dict],
+        start_time: datetime,
+        end_time: datetime,
     ) -> Optional[TimeEntryList]:
         """Use LLM to consolidate and summarize timeline data"""
 
-        # Read the prompt from PROMPT.md
+        # Read the prompt from INFER_TIME_ENTRY_LOGGING.md
         try:
-            with open("PROMPT.md", "r") as f:
+            with open("INFER_TIME_ENTRY_LOGGING.md", "r") as f:
                 base_prompt = f.read()
         except FileNotFoundError:
-            console.print("[red]PROMPT.md file not found[/red]")
+            console.print("[red]INFER_TIME_ENTRY_LOGGING.md file not found[/red]")
             return None
 
         # Read optional user context from ACTIVITY.md
@@ -79,11 +89,12 @@ class TimelineProcessor:
             }
             formatted_events.append(formatted_event)
 
-        # Create the full prompt with user context and activity watch data
+        # Create the full prompt with user context, toggl entries, and activity watch data
         full_prompt = FULL_PROMPT_TEMPLATE.format(
             base_prompt=base_prompt,
             min_duration_minutes=self.min_duration_minutes,
             user_context=user_context,
+            toggl_entries=json.dumps(toggl_entries, indent=2),
             timeline_data=json.dumps(formatted_events, indent=2),
         )
 
@@ -112,8 +123,8 @@ class TimelineProcessor:
             return None
 
 
-def get_time_choices() -> List[datetime]:
-    """Generate list of 2-hour gapped timestamps for current work day"""
+def get_today_date_range() -> Tuple[str, str]:
+    """Get today's date range in ISO format using same logic as get_time_choices"""
     now = datetime.now()  # Local timezone
     current_hour = now.replace(minute=0, second=0, microsecond=0)
 
@@ -135,58 +146,43 @@ def get_time_choices() -> List[datetime]:
             hour=day_start_hour, minute=0, second=0, microsecond=0
         )
 
-    choices = []
-    time_choice = current_hour
+    # End time is current time
+    work_day_end = now
 
-    # Go back in 2-hour increments until we reach start of relevant work day
-    while time_choice >= work_day_start:
-        choices.append(time_choice)
-        time_choice = time_choice - timedelta(hours=2)
+    # Return ISO date strings
+    start_date = work_day_start.strftime("%Y-%m-%d")
+    end_date = work_day_end.strftime("%Y-%m-%d")
 
-    # Add start of work day if not already included
-    if work_day_start not in choices:
-        choices.append(work_day_start)
-
-    return choices
+    return start_date, end_date
 
 
-def display_time_choices(choices: List[datetime]) -> datetime:
-    """Display time choices and get user selection"""
-    console.print(
-        "\n[bold cyan]Select a starting time (rounded to the hour):[/bold cyan]"
-    )
+def get_today_time_range() -> Tuple[datetime, datetime]:
+    """Get today's time range as datetime objects using same logic as get_time_choices"""
+    now = datetime.now()  # Local timezone
+    current_hour = now.replace(minute=0, second=0, microsecond=0)
 
-    table = Table(show_header=True, header_style="bold magenta")
-    table.add_column("Option", style="dim", width=6)
-    table.add_column("Date & Time", style="cyan")
-    table.add_column("Relative", style="green")
+    # Get work day configuration from environment
+    day_start_hour = int(os.getenv("WORK_DAY_START_HOUR", "0"))  # Default: midnight
+    day_end_hour = int(os.getenv("WORK_DAY_END_HOUR", "4"))  # Default: 4 AM next day
 
-    for i, choice in enumerate(choices):
-        now = datetime.now()
-        diff = now - choice
+    # Determine the earliest time to include based on current time and work day boundaries
+    if current_hour.hour < day_end_hour:
+        # Current time is within extended work day (e.g., 1:30 AM)
+        # Include times from yesterday's work day start
+        work_day_start = (current_hour - timedelta(days=1)).replace(
+            hour=day_start_hour, minute=0, second=0, microsecond=0
+        )
+    else:
+        # Current time is in new work day (e.g., 10 AM)
+        # Only include times from today's work day start
+        work_day_start = current_hour.replace(
+            hour=day_start_hour, minute=0, second=0, microsecond=0
+        )
 
-        if diff.total_seconds() < 3600:
-            relative = "Current hour"
-        elif diff.days == 0:
-            hours = int(diff.total_seconds() // 3600)
-            relative = f"{hours} hour{'s' if hours != 1 else ''} ago"
-        else:
-            relative = f"{diff.days} day{'s' if diff.days != 1 else ''} ago"
+    # End time is current time
+    work_day_end = now
 
-        table.add_row(str(i + 1), choice.strftime("%Y-%m-%d %H:%M"), relative)
-
-    console.print(table)
-
-    while True:
-        try:
-            selection = Prompt.ask("\nEnter option number", default="1")
-            index = int(selection) - 1
-            if 0 <= index < len(choices):
-                return choices[index]
-            else:
-                console.print("[red]Invalid option. Please try again.[/red]")
-        except ValueError:
-            console.print("[red]Please enter a valid number.[/red]")
+    return work_day_start, work_day_end
 
 
 @click.command()
@@ -214,6 +210,15 @@ def main(model: str, aw_url: str, output: Optional[str], min_duration: Optional[
     # Initialize clients
     aw_client = ActivityWatchClient(aw_url)
     processor = TimelineProcessor(model, min_duration)
+
+    # Initialize Toggl client (optional, will skip if no API token)
+    toggl_client = None
+    try:
+        toggl_client = TogglClient()
+        console.print("[green]✓ Toggl client initialized[/green]")
+    except ValueError as e:
+        console.print(f"[yellow]⚠ Toggl client not available: {e}[/yellow]")
+        console.print("[yellow]Continuing without existing time entries...[/yellow]")
 
     # Test connection
     console.print("Testing connection to ActivityWatch...")
@@ -250,22 +255,17 @@ def main(model: str, aw_url: str, output: Optional[str], min_duration: Optional[
     console.print("\n[bold]Available buckets:[/bold]")
     console.print(table)
 
-    # Get time selection
-    time_choices = get_time_choices()
-    start_time = display_time_choices(time_choices)
-    end_time = datetime.now()  # Local timezone
+    # Automatically use today's time range
+    start_date, end_date = get_today_date_range()
+    start_time, end_time = get_today_time_range()
 
     duration_timedelta = end_time - start_time
     duration_hours = duration_timedelta.total_seconds() / 3600
 
-    console.print("\n[bold]Selected time range:[/bold]")
+    console.print("\n[bold]Processing time range for today:[/bold]")
     console.print(f"Start: {start_time.strftime('%Y-%m-%d %H:%M')}")
     console.print(f"End: {end_time.strftime('%Y-%m-%d %H:%M')}")
     console.print(f"Duration: {duration_hours:.1f} hour(s)")
-
-    if not Confirm.ask("\nProceed with fetching timeline data?"):
-        console.print("Cancelled.")
-        sys.exit(0)
 
     # Fetch timeline data from all buckets
     console.print("\n[bold]Fetching timeline data...[/bold]")
@@ -288,6 +288,22 @@ def main(model: str, aw_url: str, output: Optional[str], min_duration: Optional[
 
     console.print(f"\n[green]Total events collected: {len(all_events)}[/green]")
 
+    # Fetch existing Toggl time entries for today
+    toggl_entries = []
+    if toggl_client:
+        console.print("\n[bold]Fetching existing Toggl time entries...[/bold]")
+        try:
+            with console.status("[bold green]Fetching Toggl entries..."):
+                toggl_entries = toggl_client.get_time_entries(start_date, end_date)
+            console.print(
+                f"[green]✓ Found {len(toggl_entries)} existing time entries[/green]"
+            )
+        except Exception as e:
+            console.print(f"[red]Error fetching Toggl entries: {e}[/red]")
+            console.print(
+                "[yellow]Continuing without existing time entries...[/yellow]"
+            )
+
     # Process with LLM
     if not Confirm.ask("Process timeline with LLM?"):
         console.print("Timeline data fetched but not processed.")
@@ -296,7 +312,9 @@ def main(model: str, aw_url: str, output: Optional[str], min_duration: Optional[
     console.print(f"\n[bold]Processing timeline with {processor.model}...[/bold]")
 
     with console.status("[bold green]LLM processing timeline..."):
-        result = processor.consolidate_timeline(all_events, start_time, end_time)
+        result = processor.consolidate_timeline(
+            all_events, toggl_entries, start_time, end_time
+        )
 
     if result:
         console.print("\n[bold green]✓ Timeline processed successfully![/bold green]")
