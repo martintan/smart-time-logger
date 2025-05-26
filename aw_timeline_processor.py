@@ -28,6 +28,9 @@ console = Console()
 FULL_PROMPT_TEMPLATE = """
 {base_prompt}
 
+**Configuration:**
+- Minimum Activity Duration: {min_duration_minutes} minutes (ignore consolidated blocks shorter than this)
+
 **User's Context:**
 {user_context}
 
@@ -39,8 +42,9 @@ FULL_PROMPT_TEMPLATE = """
 class TimelineProcessor:
     """Process timeline data using LLM"""
 
-    def __init__(self, model: str = None):
+    def __init__(self, model: str = None, min_duration_minutes: int = None):
         self.model = model or os.getenv("LLM_MODEL", "gpt-4.1")
+        self.min_duration_minutes = min_duration_minutes or int(os.getenv("MIN_ACTIVITY_DURATION_MINUTES", "5"))
 
     def consolidate_timeline(
         self, timeline_data: List[Dict], start_time: datetime, end_time: datetime
@@ -78,6 +82,7 @@ class TimelineProcessor:
         # Create the full prompt with user context and activity watch data
         full_prompt = FULL_PROMPT_TEMPLATE.format(
             base_prompt=base_prompt,
+            min_duration_minutes=self.min_duration_minutes,
             user_context=user_context,
             timeline_data=json.dumps(formatted_events, indent=2),
         )
@@ -194,7 +199,13 @@ def display_time_choices(choices: List[datetime]) -> datetime:
     help="ActivityWatch server URL (default: from env or localhost:5600)",
 )
 @click.option("--output", "-o", help="Output file to save results (optional)")
-def main(model: str, aw_url: str, output: Optional[str]):
+@click.option(
+    "--min-duration",
+    default=None,
+    type=int,
+    help="Minimum activity duration in minutes to consider (default: 5)",
+)
+def main(model: str, aw_url: str, output: Optional[str], min_duration: Optional[int]):
     """ActivityWatch Timeline Processor CLI"""
 
     console.print("[bold green]ActivityWatch Timeline Processor[/bold green]")
@@ -202,7 +213,7 @@ def main(model: str, aw_url: str, output: Optional[str]):
 
     # Initialize clients
     aw_client = ActivityWatchClient(aw_url)
-    processor = TimelineProcessor(model)
+    processor = TimelineProcessor(model, min_duration)
 
     # Test connection
     console.print("Testing connection to ActivityWatch...")

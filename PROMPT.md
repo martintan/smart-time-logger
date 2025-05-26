@@ -32,6 +32,7 @@ You are an AI assistant. Your task is to transform raw, detailed time entries fr
      - The application (`data.app`) or window title (`data.title`) indicates a distinct shift in primary focus (e.g., switching from a coding task in "kitty" with title "nvim" to watching an extended video on "firefox" with a YouTube title, or starting a "zoom" meeting).
      - A secondary task becomes dominant for a significant duration.
      - There is a considerable unexplained time gap between ActivityWatch entries, suggesting a new activity might have started.
+   - **Filter by Duration:** Only include consolidated blocks that meet the minimum activity duration requirement (specified in the configuration). Blocks shorter than this duration should be excluded from the final output.
 
 2. **Determine Primary Activity & Generate Concise Description:**
 
