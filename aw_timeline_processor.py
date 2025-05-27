@@ -7,7 +7,7 @@ A CLI tool to fetch timeline data from ActivityWatch API and process it with LLM
 import json
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 import click
@@ -154,6 +154,24 @@ def get_today_date_range() -> Tuple[str, str]:
     end_date = work_day_end.strftime("%Y-%m-%d")
 
     return start_date, end_date
+
+
+def convert_time_to_local(date_str: str, time_str: str) -> Tuple[str, str]:
+    """Convert UTC time to local timezone for display"""
+    try:
+        # Parse the date and time
+        dt_str = f"{date_str} {time_str}"
+        dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+        
+        # Assume the time is in UTC and convert to local
+        dt_utc = dt.replace(tzinfo=timezone.utc)
+        dt_local = dt_utc.astimezone()
+        
+        # Return local date and time strings
+        return dt_local.strftime("%Y-%m-%d"), dt_local.strftime("%H:%M:%S")
+    except (ValueError, TypeError):
+        # If conversion fails, return original values
+        return date_str, time_str
 
 
 def get_today_time_range() -> Tuple[datetime, datetime]:
@@ -324,8 +342,13 @@ def main(model: str, aw_url: str, output: Optional[str], min_duration: Optional[
         # Display the structured results
         for entry in result.entries:
             console.print(f"\n[cyan]{entry.description}[/cyan]")
+            
+            # Convert times to local timezone for display
+            start_date_local, start_time_local = convert_time_to_local(entry.start_date, entry.start_time)
+            end_date_local, end_time_local = convert_time_to_local(entry.end_date, entry.end_time)
+            
             console.print(
-                f"  Time: {entry.start_date} {entry.start_time} - {entry.end_date} {entry.end_time}"
+                f"  Time: {start_date_local} {start_time_local} - {end_date_local} {end_time_local}"
             )
             console.print(f"  Duration: {entry.duration}")
             if entry.project:

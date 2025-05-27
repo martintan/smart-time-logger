@@ -65,6 +65,13 @@ Return a JSON object with the following structure:
 - **Accurate Timing**: Ensure start/end times align with actual activity periods
 - **Clear Descriptions**: Write concise but descriptive summaries of the inferred activities
 - **Project Inference**: Try to match projects from existing Toggl entries when contextually appropriate
+- **Duration Rounding**: Always round durations to clean, professional intervals:
+  - Round to the nearest 5 or 10 minutes for most entries
+  - For example: 18:02 → 18:00, 23:00 → 25:00, 17:00 → 15:00, 28:00 → 30:00
+  - Adjust start/end times accordingly to maintain the rounded duration
+  - Prefer rounding to 5-minute intervals (00:05, 00:10, 00:15, 00:20, 00:25, 00:30, etc.)
+  - For longer durations, round to 10-minute intervals (00:30, 00:40, 00:50, 01:00, etc.)
+  - Always ensure the duration field matches the calculated time between start and end times
 
 ## Example Scenarios
 
