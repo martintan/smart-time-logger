@@ -305,7 +305,7 @@ def main(model: str, aw_url: str, output: Optional[str], min_duration: Optional[
             )
 
     # Process with LLM
-    if not Confirm.ask("Process timeline with LLM?"):
+    if not Confirm.ask("Process timeline with LLM?", default=True):
         console.print("Timeline data fetched but not processed.")
         sys.exit(0)
 
