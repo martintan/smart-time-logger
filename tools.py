@@ -62,11 +62,11 @@ def convert_time_to_local(date_str: str, time_str: str) -> Tuple[str, str]:
         # Parse the date and time
         dt_str = f"{date_str} {time_str}"
         dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
-        
+
         # Assume the time is in UTC and convert to local
         dt_utc = dt.replace(tzinfo=timezone.utc)
         dt_local = dt_utc.astimezone()
-        
+
         # Return local date and time strings
         return dt_local.strftime("%Y-%m-%d"), dt_local.strftime("%H:%M:%S")
     except (ValueError, TypeError):
@@ -104,16 +104,16 @@ def get_today_time_range() -> Tuple[datetime, datetime]:
 
 
 @tool
-def initialize_clients(aw_url: str = None) -> str:
+def initialize_clients(aw_url: Optional[str] = None) -> str:
     """Initialize ActivityWatch, Toggl clients and timeline processor. This should be called first before using other functions.
-    
+
     Args:
         aw_url: ActivityWatch server URL (default: from env or localhost:5600)
     """
     global _aw_client, _toggl_client, _processor
-    
+
     # Initialize clients
-    _aw_client = ActivityWatchClient(aw_url)
+    _aw_client = ActivityWatchClient(aw_url) if aw_url else ActivityWatchClient()
     _processor = TimelineProcessor()
 
     # Initialize Toggl client (optional, will skip if no API token)
@@ -136,7 +136,7 @@ def test_connection() -> str:
     global _aw_client
     if _aw_client is None:
         return "❌ Error: Clients not initialized. Call initialize_clients first."
-    
+
     console.print("Testing connection to ActivityWatch...")
     if not _aw_client.test_connection():
         console.print(f"[red]Could not connect to ActivityWatch[/red]")
@@ -153,7 +153,7 @@ def get_and_display_buckets() -> str:
     global _aw_client
     if _aw_client is None:
         return "❌ Error: Clients not initialized. Call initialize_clients first."
-        
+
     console.print("\nFetching available buckets...")
     buckets = _aw_client.get_buckets()
 
@@ -194,7 +194,7 @@ def display_time_range() -> str:
     console.print(f"Start: {start_time.strftime('%Y-%m-%d %H:%M')}")
     console.print(f"End: {end_time.strftime('%Y-%m-%d %H:%M')}")
     console.print(f"Duration: {duration_hours:.1f} hour(s)")
-    
+
     return f"Time range for today:\nStart: {start_time.strftime('%Y-%m-%d %H:%M')}\nEnd: {end_time.strftime('%Y-%m-%d %H:%M')}\nDuration: {duration_hours:.1f} hour(s)"
 
 
@@ -204,14 +204,14 @@ def fetch_timeline_data() -> str:
     global _aw_client
     if _aw_client is None:
         return "❌ Error: Clients not initialized. Call initialize_clients first."
-    
+
     # Get buckets and time range
     buckets = _aw_client.get_buckets()
     if not buckets:
         return "❌ No buckets available"
-    
+
     start_time, end_time = get_today_time_range()
-    
+
     console.print("\n[bold]Fetching timeline data...[/bold]")
     all_events = []
     events_summary = ""
@@ -241,10 +241,10 @@ def fetch_timeline_data() -> str:
 def fetch_toggl_entries() -> str:
     """Fetch existing Toggl time entries for today. Must call initialize_clients first."""
     global _toggl_client
-    
+
     start_date, end_date = get_today_date_range()
     toggl_entries = []
-    
+
     if _toggl_client:
         console.print("\n[bold]Fetching existing Toggl time entries...[/bold]")
         try:
@@ -268,28 +268,28 @@ def fetch_toggl_entries() -> str:
 def process_timeline_with_llm() -> str:
     """Process timeline data with LLM to generate consolidated time entries. Must call initialize_clients, fetch_timeline_data, and fetch_toggl_entries first."""
     global _aw_client, _toggl_client, _processor
-    
+
     if _aw_client is None or _processor is None:
         return "❌ Error: Clients not initialized. Call initialize_clients first."
-    
+
     # Get the required data
     buckets = _aw_client.get_buckets()
     if not buckets:
         return "❌ No buckets available"
-        
+
     start_time, end_time = get_today_time_range()
     start_date, end_date = get_today_date_range()
-    
+
     # Fetch timeline data
     all_events = []
     for bucket_id in buckets.keys():
         events = _aw_client.get_events(bucket_id, start_time, end_time)
         if events:
             all_events.extend(events)
-    
+
     if not all_events:
         return "❌ No timeline data available to process"
-        
+
     # Fetch Toggl entries
     toggl_entries = []
     if _toggl_client:
@@ -297,14 +297,14 @@ def process_timeline_with_llm() -> str:
             toggl_entries = _toggl_client.get_time_entries(start_date, end_date)
         except Exception as e:
             pass  # Continue without Toggl entries
-    
+
     console.print(f"\n[bold]Processing timeline with {_processor.model}...[/bold]")
 
     with console.status("[bold green]LLM processing timeline..."):
         result = _processor.consolidate_timeline(
             all_events, toggl_entries, start_time, end_time
         )
-    
+
     if result:
         # Store result globally for display function
         global _last_result
@@ -318,32 +318,36 @@ def process_timeline_with_llm() -> str:
 def display_results() -> str:
     """Display the processed timeline results. Must call process_timeline_with_llm first."""
     global _last_result
-    
+
     if _last_result is None:
         return "❌ No results to display. Call process_timeline_with_llm first."
-    
+
     console.print("\n[bold green]✓ Timeline processed successfully![/bold green]")
     console.print("\n" + "=" * 50)
     console.print("[bold cyan]Processed Timeline:[/bold cyan]")
 
     results_text = ""
-    
+
     # Display the structured results
     for entry in _last_result.entries:
         console.print(f"\n[cyan]{entry.description}[/cyan]")
-        
+
         # Convert times to local timezone for display
-        start_date_local, start_time_local = convert_time_to_local(entry.start_date, entry.start_time)
-        end_date_local, end_time_local = convert_time_to_local(entry.end_date, entry.end_time)
-        
+        start_date_local, start_time_local = convert_time_to_local(
+            entry.start_date, entry.start_time
+        )
+        end_date_local, end_time_local = convert_time_to_local(
+            entry.end_date, entry.end_time
+        )
+
         time_display = f"  Time: {start_date_local} {start_time_local} - {end_date_local} {end_time_local}"
         duration_display = f"  Duration: {entry.duration}"
-        
+
         console.print(time_display)
         console.print(duration_display)
-        
+
         results_text += f"\n{entry.description}\n{time_display}\n{duration_display}\n"
-        
+
         if entry.project:
             project_display = f"  Project: {entry.project}"
             console.print(project_display)
@@ -359,15 +363,15 @@ def display_results() -> str:
 @tool
 def save_results(output_file: str) -> str:
     """Save the processed timeline results to a JSON file. Must call process_timeline_with_llm first.
-    
+
     Args:
         output_file: Path to the output JSON file where results will be saved
     """
     global _last_result
-    
+
     if _last_result is None:
         return "❌ No results to save. Call process_timeline_with_llm first."
-    
+
     try:
         with open(output_file, "w") as f:
             f.write(_last_result.model_dump_json(indent=2))
@@ -379,9 +383,14 @@ def save_results(output_file: str) -> str:
 
 
 @tool
-def run_full_workflow(model: str = None, aw_url: str = None, output_file: str = None, min_duration: int = None) -> str:
+def run_full_workflow(
+    model: Optional[str] = None,
+    aw_url: Optional[str] = None,
+    output_file: Optional[str] = None,
+    min_duration: Optional[int] = None,
+) -> str:
     """Run the complete timeline processing workflow from start to finish.
-    
+
     Args:
         model: LLM model to use (default: from env or gpt-4o)
         aw_url: ActivityWatch server URL (default: from env or localhost:5600)
@@ -391,51 +400,57 @@ def run_full_workflow(model: str = None, aw_url: str = None, output_file: str = 
     try:
         # Initialize clients
         init_result = initialize_clients(aw_url)
-        if "❌" in init_result:
-            return init_result
-        
+        init_str = str(init_result)
+        if "❌" in init_str:
+            return init_str
+
         # Set model and min duration if provided
         global _processor
         if model and _processor:
             _processor.model = model
         if min_duration and _processor:
             _processor.min_duration_minutes = min_duration
-        
+
         # Test connection
         conn_result = test_connection()
-        if "❌" in conn_result:
-            return conn_result
-        
+        conn_str = str(conn_result)
+        if "❌" in conn_str:
+            return conn_str
+
         # Get buckets
         buckets_result = get_and_display_buckets()
-        if "❌" in buckets_result:
-            return buckets_result
-        
+        buckets_str = str(buckets_result)
+        if "❌" in buckets_str:
+            return buckets_str
+
         # Display time range
         time_result = display_time_range()
-        
+
         # Fetch timeline data
         timeline_result = fetch_timeline_data()
-        if "❌" in timeline_result:
-            return timeline_result
-        
+        timeline_str = str(timeline_result)
+        if "❌" in timeline_str:
+            return timeline_str
+
         # Fetch Toggl entries
         toggl_result = fetch_toggl_entries()
-        
+
         # Process with LLM
         process_result = process_timeline_with_llm()
-        if "❌" in process_result:
-            return process_result
-        
+        process_str = str(process_result)
+        if "❌" in process_str:
+            return process_str
+
         # Display results
         display_result = display_results()
-        
+
         # Save if output file specified
         save_result = ""
         if output_file:
             save_result = save_results(output_file)
-        
-        return f"✓ Complete workflow executed successfully!\n\n{init_result}\n{conn_result}\n{buckets_result}\n{time_result}\n{timeline_result}\n{toggl_result}\n{process_result}\n{display_result}\n{save_result}"
-        
+
+        return f"✓ Complete workflow executed successfully!\n\n{init_str}\n{conn_str}\n{buckets_str}\n{str(time_result)}\n{timeline_str}\n{str(toggl_result)}\n{process_str}\n{str(display_result)}\n{str(save_result)}"
+
     except Exception as e:
         return f"❌ Error in workflow: {e}"
+
