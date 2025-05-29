@@ -14,6 +14,7 @@ from smolagents import CodeAgent, LiteLLMModel
 
 from entry import TimeEntryList
 from tools import (
+    create_time_entries,
     display_results,
     display_time_range,
     fetch_timeline_data,
@@ -64,6 +65,7 @@ def create_agent() -> CodeAgent:
         display_time_range,
         fetch_timeline_data,
         fetch_time_entries,
+        create_time_entries,
         process_timeline_with_llm,
         display_results,
         save_results,
@@ -91,7 +93,12 @@ def chat_interface():
     console.print("• 'get buckets' - Show available buckets")
     console.print("• 'show time range' - Display time range")
     console.print("• 'fetch data' - Fetch timeline data")
-    console.print("• 'fetch time entries [date] [start_time] [end_time]' - Fetch Toggl entries for specific time range")
+    console.print(
+        "• 'fetch time entries [date] [start_time] [end_time]' - Fetch Toggl entries for specific time range"
+    )
+    console.print(
+        "• 'create time entries [entries_list]' - Create time entries in Toggl workspace from TimeEntry objects"
+    )
     console.print("• 'process with llm' - Process with LLM")
     console.print("• 'display results' - Show processed results")
     console.print("• 'save results filename.json' - Save results to file")
