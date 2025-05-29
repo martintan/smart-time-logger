@@ -28,7 +28,7 @@ class TogglClient:
         self._user_info = None
         self._workspace_id = None
 
-    def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
+    def _make_request(self, method: str, endpoint: str, **kwargs) -> Any:
         """Make HTTP request to Toggl API."""
         url = f"{self.base_url}/{endpoint}"
         response = self.session.request(method, url, **kwargs)
@@ -146,4 +146,3 @@ class TogglClient:
             if tag["name"].lower() == name_lower:
                 return tag
         return None
-
