@@ -17,7 +17,7 @@ from tools import (
     display_results,
     display_time_range,
     fetch_timeline_data,
-    fetch_toggl_entries,
+    fetch_time_entries,
     get_and_display_buckets,
     initialize_clients,
     process_timeline_with_llm,
@@ -63,7 +63,7 @@ def create_agent() -> CodeAgent:
         get_and_display_buckets,
         display_time_range,
         fetch_timeline_data,
-        fetch_toggl_entries,
+        fetch_time_entries,
         process_timeline_with_llm,
         display_results,
         save_results,
@@ -91,7 +91,7 @@ def chat_interface():
     console.print("• 'get buckets' - Show available buckets")
     console.print("• 'show time range' - Display time range")
     console.print("• 'fetch data' - Fetch timeline data")
-    console.print("• 'fetch toggl' - Fetch Toggl entries")
+    console.print("• 'fetch time entries [date] [start_time] [end_time]' - Fetch Toggl entries for specific time range")
     console.print("• 'process with llm' - Process with LLM")
     console.print("• 'display results' - Show processed results")
     console.print("• 'save results filename.json' - Save results to file")

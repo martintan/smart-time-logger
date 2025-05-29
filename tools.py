@@ -238,22 +238,156 @@ def fetch_timeline_data() -> str:
 
 
 @tool
-def fetch_toggl_entries() -> str:
-    """Fetch existing Toggl time entries for today. Must call initialize_clients first."""
+def fetch_time_entries(
+    date: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+) -> str:
+    """Fetch existing Toggl time entries for a specific time range. Must call initialize_clients first.
+
+    Args:
+        date: Date in YYYY-MM-DD format (default: today)
+        start_time: Start time in HH:MM format (default: work day start)
+        end_time: End time in HH:MM format (default: current time)
+    """
     global _toggl_client
 
-    start_date, end_date = get_today_date_range()
+    if date is None:
+        # Use today's date range
+        start_date, end_date = get_today_date_range()
+    else:
+        # Use specified date
+        start_date = end_date = date
+
+    # Initialize variables for potential use in filtering
+    base_date = None
+    start_time_obj = None
+    end_time_obj = None
+    start_datetime = None
+    end_datetime = None
+
+    # If specific times are provided, we need to construct the full datetime range
+    if start_time or end_time:
+
+        try:
+            # Parse the date
+            base_date = datetime.strptime(date or start_date, "%Y-%m-%d").date()
+
+            # Parse start time
+            if start_time:
+                start_time_obj = datetime.strptime(start_time, "%H:%M").time()
+                start_datetime = datetime.combine(base_date, start_time_obj)
+            else:
+                # Use work day start
+                work_day_start, _ = get_today_time_range()
+                start_datetime = work_day_start.replace(
+                    year=base_date.year, month=base_date.month, day=base_date.day
+                )
+
+            # Parse end time
+            if end_time:
+                end_time_obj = datetime.strptime(end_time, "%H:%M").time()
+                end_datetime = datetime.combine(base_date, end_time_obj)
+
+                # Handle case where end time is next day (e.g., 21:00 to 01:30)
+                if start_datetime is not None and end_datetime < start_datetime:
+                    end_datetime = end_datetime.replace(day=base_date.day + 1)
+            else:
+                # Use current time or work day end
+                _, work_day_end = get_today_time_range()
+                end_datetime = work_day_end.replace(
+                    year=base_date.year, month=base_date.month, day=base_date.day
+                )
+
+            # Convert back to date strings for the API
+            if start_datetime is not None:
+                start_date = start_datetime.strftime("%Y-%m-%d")
+            if end_datetime is not None:
+                end_date = end_datetime.strftime("%Y-%m-%d")
+
+        except ValueError as e:
+            return f"❌ Error parsing time format: {e}. Use HH:MM format for times and YYYY-MM-DD for date."
+
     toggl_entries = []
 
     if _toggl_client:
-        console.print("\n[bold]Fetching existing Toggl time entries...[/bold]")
+        time_range_desc = f"{date or 'today'}"
+        if start_time or end_time:
+            time_range_desc += (
+                f" from {start_time or 'work start'} to {end_time or 'current time'}"
+            )
+
+        console.print(
+            f"\n[bold]Fetching Toggl time entries for {time_range_desc}...[/bold]"
+        )
         try:
             with console.status("[bold green]Fetching Toggl entries..."):
                 toggl_entries = _toggl_client.get_time_entries(start_date, end_date)
+
+            # Filter entries by specific time range if provided
+            if (start_time or end_time) and toggl_entries:
+                filtered_entries = []
+                for entry in toggl_entries:
+                    # Parse entry time and check if it falls within the specified range
+                    try:
+                        entry_start = datetime.fromisoformat(
+                            entry.get("start", "").replace("Z", "+00:00")
+                        )
+                        entry_end = (
+                            datetime.fromisoformat(
+                                entry.get("stop", "").replace("Z", "+00:00")
+                            )
+                            if entry.get("stop")
+                            else None
+                        )
+
+                        # Convert to local time for comparison
+                        entry_start_local = entry_start.astimezone()
+
+                        # Check if entry overlaps with specified time range
+                        if (
+                            start_time
+                            and base_date is not None
+                            and start_time_obj is not None
+                        ):
+                            range_start = datetime.combine(
+                                base_date, start_time_obj
+                            ).replace(tzinfo=entry_start_local.tzinfo)
+                            if entry_start_local < range_start:
+                                continue
+
+                        if (
+                            end_time
+                            and entry_end
+                            and base_date is not None
+                            and end_time_obj is not None
+                        ):
+                            range_end = datetime.combine(
+                                base_date, end_time_obj
+                            ).replace(tzinfo=entry_start_local.tzinfo)
+                            if (
+                                end_datetime is not None
+                                and start_datetime is not None
+                                and end_datetime < start_datetime
+                            ):  # Next day case
+                                range_end = range_end.replace(day=base_date.day + 1)
+                            entry_end_local = entry_end.astimezone()
+                            if entry_end_local > range_end:
+                                continue
+
+                        filtered_entries.append(entry)
+                    except (ValueError, KeyError):
+                        # If we can't parse the entry time, include it to be safe
+                        filtered_entries.append(entry)
+
+                toggl_entries = filtered_entries
+
             console.print(
-                f"[green]✓ Found {len(toggl_entries)} existing time entries[/green]"
+                f"[green]✓ Found {len(toggl_entries)} time entries for {time_range_desc}[/green]"
             )
-            return f"✓ Found {len(toggl_entries)} existing Toggl time entries"
+            return (
+                f"✓ Found {len(toggl_entries)} Toggl time entries for {time_range_desc}"
+            )
         except Exception as e:
             console.print(f"[red]Error fetching Toggl entries: {e}[/red]")
             console.print(
@@ -264,9 +398,10 @@ def fetch_toggl_entries() -> str:
         return "⚠ Toggl client not available - continuing without existing time entries"
 
 
+
 @tool
 def process_timeline_with_llm() -> str:
-    """Process timeline data with LLM to generate consolidated time entries. Must call initialize_clients, fetch_timeline_data, and fetch_toggl_entries first."""
+    """Process timeline data with LLM to generate consolidated time entries. Must call initialize_clients, fetch_timeline_data, and fetch_time_entries first."""
     global _aw_client, _toggl_client, _processor
 
     if _aw_client is None or _processor is None:
@@ -433,7 +568,7 @@ def run_full_workflow(
             return timeline_str
 
         # Fetch Toggl entries
-        toggl_result = fetch_toggl_entries()
+        toggl_result = fetch_time_entries()
 
         # Process with LLM
         process_result = process_timeline_with_llm()
@@ -453,4 +588,3 @@ def run_full_workflow(
 
     except Exception as e:
         return f"❌ Error in workflow: {e}"
-
