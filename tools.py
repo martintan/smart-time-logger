@@ -574,7 +574,46 @@ def process_timeline_with_llm() -> str:
         # Store result globally for display function
         global _last_result
         _last_result = result
-        return f"✓ Timeline processed successfully! Found {len(result.entries)} consolidated time entries."
+
+        # Display the consolidated timeline result
+        console.print("\n[bold green]✓ Timeline processed successfully![/bold green]")
+        console.print("\n" + "=" * 50)
+        console.print("[bold cyan]Processed Timeline:[/bold cyan]")
+
+        results_text = ""
+
+        # Display the structured results
+        for entry in result.entries:
+            console.print(f"\n[cyan]{entry.description}[/cyan]")
+
+            # Convert times to local timezone for display
+            start_date_local, start_time_local = convert_time_to_local(
+                entry.start_date, entry.start_time
+            )
+            end_date_local, end_time_local = convert_time_to_local(
+                entry.end_date, entry.end_time
+            )
+
+            time_display = f"  Time: {start_date_local} {start_time_local} - {end_date_local} {end_time_local}"
+            duration_display = f"  Duration: {entry.duration}"
+
+            console.print(time_display)
+            console.print(duration_display)
+
+            results_text += (
+                f"\n{entry.description}\n{time_display}\n{duration_display}\n"
+            )
+
+            if entry.project:
+                project_display = f"  Project: {entry.project}"
+                console.print(project_display)
+                results_text += f"{project_display}\n"
+            if entry.task:
+                task_display = f"  Task: {entry.task}"
+                console.print(task_display)
+                results_text += f"{task_display}\n"
+
+        return f"✓ Timeline processed successfully! Found {len(result.entries)} consolidated time entries:{results_text}"
     else:
         return "❌ Failed to process timeline with LLM"
 
