@@ -17,16 +17,9 @@ from smolagents import CodeAgent, LiteLLMModel
 from entry import TimeEntryList
 from tools import (
     create_time_entries,
-    display_results,
-    display_time_range,
     fetch_timeline_data,
     fetch_time_entries,
-    get_and_display_buckets,
-    initialize_clients,
-    process_timeline_with_llm,
     run_full_workflow,
-    save_results,
-    test_connection,
 )
 
 load_dotenv()
@@ -93,19 +86,11 @@ def create_agent() -> CodeAgent:
     # Create LiteLLM model instance
     model = LiteLLMModel(model_id=model_name)
 
-    # Define all tools
+    # Define core tools only
     tools = [
-        initialize_clients,
-        test_connection,
-        get_and_display_buckets,
-        display_time_range,
         fetch_timeline_data,
         fetch_time_entries,
         create_time_entries,
-        process_timeline_with_llm,
-        display_results,
-        save_results,
-        run_full_workflow,
     ]
 
     # Create agent with tools
@@ -120,24 +105,23 @@ def chat_interface():
         "[bold green]ActivityWatch Timeline Processor - Agent Mode[/bold green]"
     )
     console.print("=" * 60)
-    console.print("[cyan]Available commands:[/cyan]")
+    console.print("[cyan]Available tools:[/cyan]")
     console.print(
-        "• 'process timeline' or 'run full workflow' - Complete timeline processing"
-    )
-    console.print("• 'initialize' - Initialize clients")
-    console.print("• 'test connection' - Test ActivityWatch connection")
-    console.print("• 'get buckets' - Show available buckets")
-    console.print("• 'show time range' - Display time range")
-    console.print("• 'fetch data' - Fetch timeline data")
-    console.print(
-        "• 'fetch time entries [date] [start_time] [end_time]' - Fetch Toggl entries for specific time range"
+        "• [bold]fetch_timeline_data[/bold] - Fetch timeline data from ActivityWatch"
     )
     console.print(
-        "• 'create time entries [entries_list]' - Create time entries in Toggl workspace from TimeEntry objects"
+        "• [bold]fetch_time_entries[/bold] - Fetch Toggl time entries for specific time range"
     )
-    console.print("• 'process with llm' - Process with LLM")
-    console.print("• 'display results' - Show processed results")
-    console.print("• 'save results filename.json' - Save results to file")
+    console.print(
+        "• [bold]create_time_entries[/bold] - Create time entries in Toggl workspace"
+    )
+    console.print()
+    console.print(
+        "[dim]You can ask the agent to use these tools or combine them in natural language.[/dim]"
+    )
+    console.print(
+        "[dim]Example: 'fetch timeline data for today and show me time entries'[/dim]"
+    )
     console.print("• 'exit' - Exit the application")
     console.print()
 
