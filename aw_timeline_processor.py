@@ -19,12 +19,18 @@ from tools import (
     create_time_entries,
     fetch_timeline_data,
     fetch_time_entries,
+    process_timeline_with_llm,
     run_full_workflow,
 )
 
 load_dotenv()
 
 console = Console()
+
+
+def load_system_prompt() -> str:
+    with open("AGENT_PROMPT.md", "r") as f:
+        return f.read()
 
 
 def styled_input() -> str:
@@ -91,6 +97,7 @@ def create_agent() -> CodeAgent:
         fetch_timeline_data,
         fetch_time_entries,
         create_time_entries,
+        process_timeline_with_llm,
     ]
 
     # Create agent with tools
@@ -113,6 +120,9 @@ def chat_interface():
         "• [bold]fetch_time_entries[/bold] - Fetch Toggl time entries for specific time range"
     )
     console.print(
+        "• [bold]process_timeline_with_llm[/bold] - Process timeline data into consolidated time entries"
+    )
+    console.print(
         "• [bold]create_time_entries[/bold] - Create time entries in Toggl workspace"
     )
     console.print()
@@ -128,6 +138,9 @@ def chat_interface():
     # Create agent
     agent = create_agent()
 
+    # Load system prompt once
+    system_prompt = load_system_prompt()
+
     while True:
         try:
             # Get user input using styled input box
@@ -140,10 +153,13 @@ def chat_interface():
             if not user_input:
                 continue
 
-            # Run agent with user input
+            # Combine system prompt with user input
+            full_prompt = f"{system_prompt}\n\n---\n\nUser Request: {user_input}"
+
+            # Run agent with combined prompt
             console.print(f"[dim]Processing: {user_input}[/dim]")
             try:
-                result = agent.run(user_input)
+                result = agent.run(full_prompt)
                 console.print(f"\n[green]Agent result:[/green] {result}")
             except Exception as e:
                 console.print(f"[red]Agent error: {e}[/red]")

@@ -404,28 +404,30 @@ def create_time_entries(
     entries: List[TimeEntry],
 ) -> str:
     """Create time entries in Toggl workspace from processed timeline results. Must call initialize_clients first.
-    
+
     Args:
         entries: List of TimeEntry objects to create in Toggl workspace.
-                Each entry should have: description, start_date, start_time, end_date, end_time, duration, 
+                Each entry should have: description, start_date, start_time, end_date, end_time, duration,
                 and optionally project and task.
     """
     global _toggl_client
-    
+
     if _toggl_client is None:
         return "❌ Error: Toggl client not initialized. Call initialize_clients first."
-    
+
     try:
         from datetime import datetime, timezone
-        
+
         if not entries:
             return "❌ Error: No entries provided to create."
-        
-        console.print(f"\n[bold]Creating {len(entries)} time entries in Toggl...[/bold]")
-        
+
+        console.print(
+            f"\n[bold]Creating {len(entries)} time entries in Toggl...[/bold]"
+        )
+
         created_entries = []
         failed_entries = []
-        
+
         with console.status("[bold green]Creating Toggl entries..."):
             for i, entry in enumerate(entries):
                 try:
@@ -436,22 +438,26 @@ def create_time_entries(
                     end_date = entry.end_date
                     end_time = entry.end_time
                     duration_str = entry.duration
-                    
+
                     if not all([description, start_date, start_time, duration_str]):
                         failed_entries.append(f"Entry {i+1}: Missing required fields")
                         continue
-                    
+
                     # Parse start datetime
                     start_datetime_str = f"{start_date} {start_time}"
                     try:
-                        start_datetime = datetime.strptime(start_datetime_str, "%Y-%m-%d %H:%M:%S")
+                        start_datetime = datetime.strptime(
+                            start_datetime_str, "%Y-%m-%d %H:%M:%S"
+                        )
                         # Convert to UTC ISO format
                         start_datetime_utc = start_datetime.replace(tzinfo=timezone.utc)
                         start_iso = start_datetime_utc.isoformat()
                     except ValueError as e:
-                        failed_entries.append(f"Entry {i+1}: Invalid datetime format - {e}")
+                        failed_entries.append(
+                            f"Entry {i+1}: Invalid datetime format - {e}"
+                        )
                         continue
-                    
+
                     # Parse duration from HH:MM:SS format to seconds
                     try:
                         time_parts = duration_str.split(":")
@@ -459,12 +465,16 @@ def create_time_entries(
                             hours, minutes, seconds = map(int, time_parts)
                             duration_seconds = hours * 3600 + minutes * 60 + seconds
                         else:
-                            failed_entries.append(f"Entry {i+1}: Invalid duration format '{duration_str}'. Expected HH:MM:SS")
+                            failed_entries.append(
+                                f"Entry {i+1}: Invalid duration format '{duration_str}'. Expected HH:MM:SS"
+                            )
                             continue
                     except (ValueError, IndexError) as e:
-                        failed_entries.append(f"Entry {i+1}: Duration parsing error - {e}")
+                        failed_entries.append(
+                            f"Entry {i+1}: Duration parsing error - {e}"
+                        )
                         continue
-                    
+
                     # Look up project ID if project name provided
                     project_id = None
                     project_name = entry.project
@@ -473,8 +483,10 @@ def create_time_entries(
                         if project:
                             project_id = project["id"]
                         else:
-                            console.print(f"[yellow]Warning: Project '{project_name}' not found for entry {i+1}[/yellow]")
-                    
+                            console.print(
+                                f"[yellow]Warning: Project '{project_name}' not found for entry {i+1}[/yellow]"
+                            )
+
                     # Create the time entry
                     created_entry = _toggl_client.create_time_entry(
                         description=description,
@@ -482,32 +494,36 @@ def create_time_entries(
                         duration=duration_seconds,
                         project_id=project_id,
                     )
-                    
+
                     created_entries.append(created_entry)
-                    console.print(f"✓ Created entry {i+1}: {description} ({duration_str})")
-                    
+                    console.print(
+                        f"✓ Created entry {i+1}: {description} ({duration_str})"
+                    )
+
                 except Exception as e:
                     failed_entries.append(f"Entry {i+1}: {str(e)}")
                     console.print(f"[red]✗ Failed to create entry {i+1}: {e}[/red]")
-        
+
         # Summary
         success_count = len(created_entries)
         failure_count = len(failed_entries)
-        
-        console.print(f"\n[green]✓ Successfully created {success_count} time entries[/green]")
+
+        console.print(
+            f"\n[green]✓ Successfully created {success_count} time entries[/green]"
+        )
         if failure_count > 0:
             console.print(f"[red]✗ Failed to create {failure_count} time entries[/red]")
             for failure in failed_entries:
                 console.print(f"  [red]• {failure}[/red]")
-        
+
         result_summary = f"✓ Created {success_count} time entries in Toggl"
         if failure_count > 0:
             result_summary += f" ({failure_count} failed)"
             for failure in failed_entries:
                 result_summary += f"\n• {failure}"
-        
+
         return result_summary
-        
+
     except Exception as e:
         console.print(f"[red]Error creating time entries: {e}[/red]")
         return f"❌ Error creating time entries: {e}"
