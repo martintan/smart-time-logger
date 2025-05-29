@@ -19,6 +19,7 @@ from tools import (
     create_time_entries,
     fetch_timeline_data,
     fetch_time_entries,
+    initialize_clients,
     process_timeline_with_llm,
     run_full_workflow,
 )
@@ -133,6 +134,16 @@ def chat_interface():
         "[dim]Example: 'fetch timeline data for today and show me time entries'[/dim]"
     )
     console.print("• 'exit' - Exit the application")
+    console.print()
+
+    # Initialize clients at startup
+    console.print("[dim]Initializing clients...[/dim]")
+    init_result = initialize_clients()
+    if "❌" in str(init_result):
+        console.print(f"[red]Failed to initialize clients: {init_result}[/red]")
+        console.print("[yellow]Some features may not work properly.[/yellow]")
+    else:
+        console.print(f"[green]{init_result}[/green]")
     console.print()
 
     # Create agent
