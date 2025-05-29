@@ -9,7 +9,9 @@ from typing import Optional
 
 import click
 from dotenv import load_dotenv
+from rich.box import ROUNDED
 from rich.console import Console
+from rich.panel import Panel
 from smolagents import CodeAgent, LiteLLMModel
 
 from entry import TimeEntryList
@@ -30,6 +32,40 @@ from tools import (
 load_dotenv()
 
 console = Console()
+
+
+def styled_input() -> str:
+    """Custom input function that renders the prompt inside a styled text box."""
+    import sys
+
+    # Create an empty input box that fills the full width
+    input_box = Panel(
+        " ",  # Empty space for the input area
+        border_style="bright_black",
+        box=ROUNDED,
+        padding=(0, 1),
+        expand=True,  # This makes it fill the available width
+        title="[dim white]💬 Input[/dim white]",
+        title_align="left",
+    )
+
+    console.print("")
+    console.print(input_box)
+
+    # Move cursor up to position it inside the box
+    # ANSI escape sequence to move cursor up 2 lines and right 4 characters
+    sys.stdout.write("\033[2A")  # Move up 2 lines
+    sys.stdout.write("\033[2C")  # Move right 4 characters
+    sys.stdout.write("\033[36m>\033[0m ")  # Print cyan ">" and reset color
+    sys.stdout.flush()
+
+    # Get user input
+    user_input = input().strip()
+
+    # Move cursor down to continue normal output
+    console.print("")
+
+    return user_input
 
 
 def run_full_timeline_processing(
@@ -110,8 +146,8 @@ def chat_interface():
 
     while True:
         try:
-            # Get user input
-            user_input = input("\n🤖 Enter command: ").strip()
+            # Get user input using styled input box
+            user_input = styled_input()
 
             if user_input.lower() in ["exit", "quit", "q"]:
                 console.print("[yellow]Goodbye![/yellow]")
@@ -121,7 +157,7 @@ def chat_interface():
                 continue
 
             # Run agent with user input
-            console.print(f"\n[dim]Processing: {user_input}[/dim]")
+            console.print(f"[dim]Processing: {user_input}[/dim]")
             try:
                 result = agent.run(user_input)
                 console.print(f"\n[green]Agent result:[/green] {result}")
