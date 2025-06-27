@@ -11,11 +11,15 @@ from rich.table import Table
 from smolagents import tool
 
 from activity_watch_client import ActivityWatchClient
+from approval import requires_approval, display_time_entries_preview
 from entry import TimeEntry
 from timeline_processor import TimelineProcessor
 from toggl_client import TogglClient
 
 console = Console()
+
+# Configuration for approval requirement
+REQUIRE_APPROVAL = os.getenv("REQUIRE_APPROVAL_FOR_MUTATIONS", "true").lower() == "true"
 
 # Global variables to store initialized clients
 _aw_client = None
@@ -399,8 +403,7 @@ def fetch_time_entries(
         return "⚠ Toggl client not available - continuing without existing time entries"
 
 
-@tool
-def create_time_entries(
+def _create_time_entries_impl(
     entries: List[TimeEntry],
 ) -> str:
     """Create time entries in Toggl workspace from processed timeline results. Must call initialize_clients first.
@@ -527,6 +530,17 @@ def create_time_entries(
     except Exception as e:
         console.print(f"[red]Error creating time entries: {e}[/red]")
         return f"❌ Error creating time entries: {e}"
+
+
+# Apply decorators conditionally
+if REQUIRE_APPROVAL:
+    create_time_entries = tool(requires_approval(
+        tool_name="create_time_entries",
+        description="Create time entries in Toggl workspace",
+        preview_func=display_time_entries_preview
+    )(_create_time_entries_impl))
+else:
+    create_time_entries = tool(_create_time_entries_impl)
 
 
 @tool
