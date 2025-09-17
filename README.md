@@ -20,6 +20,7 @@ When the interactive prompt appears, type natural language commands or notes and
 - 🤖 Process timeline with LLM (LiteLLM `gpt-5-nano` by default)
 - 🧮 Preview estimated LLM input tokens before processing
 - ⌨️ Interactive command prompt with Ctrl+T quick action and Ctrl+Y prompt copy
+- 🧼 Automatically filters AFK ActivityWatch events to keep prompts concise
 - 📋 Generate clean, grouped time blocks
 - 💾 Save results to file
 - 🎨 Rich CLI interface with tables and colors

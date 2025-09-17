@@ -174,8 +174,21 @@ def main() -> None:
         for bucket_id in sorted(buckets.keys()):
             events = client.get_events(bucket_id, start, end)
             if events:
-                console.print(f"• {bucket_id}: {len(events)} events")
-                all_events.extend(events)
+                filtered = [
+                    event
+                    for event in events
+                    if not (
+                        isinstance(event.get("data"), dict)
+                        and event["data"].get("status") == "afk"
+                    )
+                ]
+                if len(filtered) != len(events):
+                    console.print(
+                        f"• {bucket_id}: {len(filtered)} events (filtered {len(events) - len(filtered)} AFK events)"
+                    )
+                else:
+                    console.print(f"• {bucket_id}: {len(filtered)} events")
+                all_events.extend(filtered)
             else:
                 console.print(f"• {bucket_id}: no events")
 
