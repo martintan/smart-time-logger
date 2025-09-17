@@ -87,24 +87,13 @@ Run the CLI tool:
 python time.py
 ```
 
-### Advanced Options
+### Configuration
 
-```bash
-# Use different LLM model
-python time.py --model gpt-3.5-turbo
+The CLI runs with sensible defaults out of the box. You can tweak behaviour by setting environment variables before executing `python time.py`:
 
-# Analyze 2 hours instead of 1
-python time.py --duration 2
-
-# Connect to different ActivityWatch instance
-python time.py --aw-url http://192.168.1.100:5600
-
-# Save results to file
-python time.py --output timeline_summary.json
-
-# Combine options
-python time.py --model gpt-4 --duration 3 --output results.json
-```
+- `LLM_MODEL`: override the consolidation model (defaults to `gpt-5-nano`).
+- `AW_SERVER_URL`: point to a different ActivityWatch server (defaults to `http://localhost:5600`).
+- `MIN_ACTIVITY_DURATION_MINUTES`: discard consolidated blocks shorter than this value (defaults to `5`).
 
 ### Interactive Flow
 
