@@ -2,12 +2,18 @@
 
 A Python CLI tool that fetches timeline data from ActivityWatch API and processes it using LLM to create clean, consolidated time blocks suitable for time tracking platforms.
 
+## Quick Start
+
+```bash
+python time.py
+```
+
 ## Features
 
 - 🔗 Connect to local ActivityWatch instance
 - ⏰ Interactive time selection (hourly intervals)
 - 📊 Fetch timeline data from all available buckets
-- 🤖 Process timeline with LLM (GPT-4 via LiteLLM)
+- 🤖 Process timeline with LLM (LiteLLM `gpt-5-nano` by default)
 - 📋 Generate clean, grouped time blocks
 - 💾 Save results to file
 - 🎨 Rich CLI interface with tables and colors
@@ -78,26 +84,26 @@ python-dotenv>=1.0.0
 Run the CLI tool:
 
 ```bash
-python aw_timeline_processor.py
+python time.py
 ```
 
 ### Advanced Options
 
 ```bash
 # Use different LLM model
-python aw_timeline_processor.py --model gpt-3.5-turbo
+python time.py --model gpt-3.5-turbo
 
 # Analyze 2 hours instead of 1
-python aw_timeline_processor.py --duration 2
+python time.py --duration 2
 
 # Connect to different ActivityWatch instance
-python aw_timeline_processor.py --aw-url http://192.168.1.100:5600
+python time.py --aw-url http://192.168.1.100:5600
 
 # Save results to file
-python aw_timeline_processor.py --output timeline_summary.json
+python time.py --output timeline_summary.json
 
 # Combine options
-python aw_timeline_processor.py --model gpt-4 --duration 3 --output results.json
+python time.py --model gpt-4 --duration 3 --output results.json
 ```
 
 ### Interactive Flow

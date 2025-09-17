@@ -36,7 +36,7 @@ class TimelineProcessor:
     """Process timeline data using LLM"""
 
     def __init__(self, model: str = None, min_duration_minutes: int = None):
-        self.model = model or os.getenv("LLM_MODEL", "gpt-4.1")
+        self.model = model or os.getenv("LLM_MODEL", "gpt-5-nano")
         self.min_duration_minutes = min_duration_minutes or int(
             os.getenv("MIN_ACTIVITY_DURATION_MINUTES", "5")
         )

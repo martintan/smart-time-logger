@@ -37,7 +37,9 @@ def _time_window() -> tuple[datetime, datetime]:
     end_hour = int(os.getenv("WORK_DAY_END_HOUR", "4"))
     rounded_now = now.replace(minute=0, second=0, microsecond=0)
     if rounded_now.hour < end_hour:
-        start = (rounded_now - timedelta(days=1)).replace(hour=start_hour, minute=0, second=0, microsecond=0)
+        start = (rounded_now - timedelta(days=1)).replace(
+            hour=start_hour, minute=0, second=0, microsecond=0
+        )
     else:
         start = rounded_now.replace(hour=start_hour, minute=0, second=0, microsecond=0)
     return start, now
@@ -93,7 +95,9 @@ def main(
 
     client = ActivityWatchClient(aw_url)
     if not client.test_connection():
-        raise click.ClickException("Unable to reach ActivityWatch. Ensure it is running and accessible.")
+        raise click.ClickException(
+            "Unable to reach ActivityWatch. Ensure it is running and accessible."
+        )
 
     start, end = _time_window()
     console.print(
@@ -117,12 +121,16 @@ def main(
                 console.print(f"• {bucket_id}: no events")
 
     if not all_events:
-        console.print("[yellow]No timeline events were returned for the selected range.[/yellow]")
+        console.print(
+            "[yellow]No timeline events were returned for the selected range.[/yellow]"
+        )
         return
 
     previous_events = _load_previous_events()
     previous_keys = {_event_key(event) for event in previous_events}
-    new_events = [event for event in all_events if _event_key(event) not in previous_keys]
+    new_events = [
+        event for event in all_events if _event_key(event) not in previous_keys
+    ]
 
     snapshot = {
         "fetched_at": datetime.utcnow().isoformat() + "Z",
@@ -135,9 +143,13 @@ def main(
         json.dump(snapshot, fh, indent=2)
 
     if previous_events:
-        console.print(f"[green]Detected {len(new_events)} new event(s) since the last run.[/green]")
+        console.print(
+            f"[green]Detected {len(new_events)} new event(s) since the last run.[/green]"
+        )
     else:
-        console.print("[green]Stored the first ActivityWatch snapshot for future comparisons.[/green]")
+        console.print(
+            "[green]Stored the first ActivityWatch snapshot for future comparisons.[/green]"
+        )
     console.print(f"Snapshot saved to {TIMELINE_FILE}")
 
     if skip_llm:
@@ -155,15 +167,23 @@ def main(
     toggl_entries: List[Dict] = []
     try:
         toggl_client = TogglClient()
-        toggl_entries = toggl_client.get_time_entries(start.date().isoformat(), end.date().isoformat())
+        toggl_entries = toggl_client.get_time_entries(
+            start.date().isoformat(), end.date().isoformat()
+        )
         console.print(f"Loaded {len(toggl_entries)} Toggl time entries for context.")
     except ValueError as err:
         console.print(f"[yellow]Toggl unavailable: {err}[/yellow]")
-    except Exception as err:  # pragma: no cover - defensive; requests errors propagate here
+    except (
+        Exception
+    ) as err:  # pragma: no cover - defensive; requests errors propagate here
         console.print(f"[yellow]Failed to fetch Toggl entries: {err}[/yellow]")
 
-    processor = TimelineProcessor(model=model or "gpt-5-nano", min_duration_minutes=min_duration)
-    console.print(f"[bold cyan]Running {processor.model} to consolidate {len(all_events)} events...[/bold cyan]")
+    processor = TimelineProcessor(
+        model=model or "gpt-5-nano", min_duration_minutes=min_duration
+    )
+    console.print(
+        f"[bold cyan]Running {processor.model} to consolidate {len(all_events)} events...[/bold cyan]"
+    )
     result = processor.consolidate_timeline(all_events, toggl_entries, start, end)
     if not result:
         console.print("[red]LLM processing did not return any time entries.[/red]")
@@ -187,7 +207,9 @@ def main(
                 project,
             )
     console.print(table)
-    console.print("[green]Timeline processing complete. Review the entries above before syncing elsewhere.[/green]")
+    console.print(
+        "[green]Timeline processing complete. Review the entries above before syncing elsewhere.[/green]"
+    )
 
 
 if __name__ == "__main__":

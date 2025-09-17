@@ -6,7 +6,8 @@ Client for interacting with ActivityWatch API
 
 import os
 from datetime import datetime, timezone
-from typing import Dict, List, Any
+from typing import Any, Dict, List, Optional
+
 import requests
 from rich.console import Console
 
@@ -16,7 +17,7 @@ console = Console()
 class ActivityWatchClient:
     """Client for interacting with ActivityWatch API"""
 
-    def __init__(self, base_url: str = None):
+    def __init__(self, base_url: Optional[str] = None):
         self.base_url = (
             base_url or os.getenv("AW_SERVER_URL", "http://localhost:5600")
         ).rstrip("/")
@@ -70,4 +71,3 @@ class ActivityWatchClient:
         except requests.exceptions.RequestException as e:
             console.print(f"[red]Error fetching events from {bucket_id}: {e}[/red]")
             return []
-
