@@ -37,9 +37,7 @@ class TimelineProcessor:
 
     def __init__(self, model: str = None, min_duration_minutes: int = None):
         self.model = model or os.getenv("LLM_MODEL", "gpt-5-nano")
-        self.min_duration_minutes = min_duration_minutes or int(
-            os.getenv("MIN_ACTIVITY_DURATION_MINUTES", "5")
-        )
+        self.min_duration_minutes = min_duration_minutes or int(os.getenv("MIN_ACTIVITY_DURATION_MINUTES", "5"))
 
     def consolidate_timeline(
         self,
@@ -91,7 +89,7 @@ class TimelineProcessor:
             response = completion(
                 model=self.model,
                 messages=[{"role": "user", "content": full_prompt}],
-                temperature=0.3,
+                temperature=1,
                 response_format={"type": "json_object"},
             )
 
