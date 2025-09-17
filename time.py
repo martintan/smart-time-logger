@@ -71,6 +71,21 @@ def _event_key(event: Dict) -> str:
     return f"ts:{timestamp}|data:{data_blob}"
 
 
+def _event_sort_key(event: Dict) -> datetime:
+    timestamp = event.get("timestamp")
+    if not isinstance(timestamp, str):
+        return datetime.max
+
+    normalized = timestamp.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        try:
+            return datetime.fromisoformat(timestamp)
+        except ValueError:
+            return datetime.max
+
+
 def _prompt_user_decision(token_estimate: Optional[int], full_prompt: Optional[str]) -> bool:
     """Prompt the user for next action. Returns True if consolidation should run."""
 
@@ -177,10 +192,7 @@ def main() -> None:
                 filtered = [
                     event
                     for event in events
-                    if not (
-                        isinstance(event.get("data"), dict)
-                        and event["data"].get("status") == "afk"
-                    )
+                    if not (isinstance(event.get("data"), dict) and event["data"].get("status") == "afk")
                 ]
                 if len(filtered) != len(events):
                     console.print(
@@ -195,6 +207,8 @@ def main() -> None:
     if not all_events:
         console.print("[yellow]No timeline events were returned for the selected range.[/yellow]")
         return
+
+    all_events.sort(key=_event_sort_key)
 
     if SNAPSHOT_ENABLED:
         previous_events = _load_previous_events()
