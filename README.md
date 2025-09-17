@@ -8,6 +8,10 @@ A Python CLI tool that fetches timeline data from ActivityWatch API and processe
 python time.py
 ```
 
+When the interactive prompt appears, type natural language commands or notes and press Enter. The CLI shows the estimated LLM token cost beneath the prompt; press `Ctrl+T` at any time to accept and run the consolidation immediately, press `Ctrl+Y` to copy the full LLM payload to your clipboard, or submit an empty line to skip.
+
+> Tip: For the clipboard shortcut to copy to your system clipboard, install the optional `pyperclip` package (`pip install pyperclip`). Otherwise the CLI falls back to an in-memory clipboard.
+
 ## Features
 
 - 🔗 Connect to local ActivityWatch instance
@@ -15,6 +19,7 @@ python time.py
 - 📊 Fetch timeline data from all available buckets
 - 🤖 Process timeline with LLM (LiteLLM `gpt-5-nano` by default)
 - 🧮 Preview estimated LLM input tokens before processing
+- ⌨️ Interactive command prompt with Ctrl+T quick action and Ctrl+Y prompt copy
 - 📋 Generate clean, grouped time blocks
 - 💾 Save results to file
 - 🎨 Rich CLI interface with tables and colors
@@ -95,6 +100,7 @@ The CLI runs with sensible defaults out of the box. You can tweak behaviour by s
 - `LLM_MODEL`: override the consolidation model (defaults to `gpt-5-nano`).
 - `AW_SERVER_URL`: point to a different ActivityWatch server (defaults to `http://localhost:5600`).
 - `MIN_ACTIVITY_DURATION_MINUTES`: discard consolidated blocks shorter than this value (defaults to `5`).
+- `SNAPSHOT_ENABLED` (in `time.py`): toggle ActivityWatch snapshot persistence (defaults to `False`).
 
 ### Interactive Flow
 

@@ -12,10 +12,15 @@ import json
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import click
+import pyperclip
 from dotenv import load_dotenv
+from prompt_toolkit import PromptSession
+from prompt_toolkit.application import run_in_terminal
+from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.key_binding import KeyBindings
 from rich.console import Console
 from rich.table import Table
 
@@ -27,8 +32,10 @@ from toggl_client import TogglClient
 load_dotenv()
 
 console = Console()
+SNAPSHOT_ENABLED = False
 STATE_DIR = Path.home() / ".smart-time-logger"
 TIMELINE_FILE = STATE_DIR / "timeline_snapshot.json"
+CTRL_T_TRIGGER = "__CTRL_T__"
 
 
 def _time_window() -> tuple[datetime, datetime]:
@@ -44,7 +51,7 @@ def _time_window() -> tuple[datetime, datetime]:
 
 
 def _load_previous_events() -> List[Dict]:
-    if not TIMELINE_FILE.exists():
+    if not SNAPSHOT_ENABLED or not TIMELINE_FILE.exists():
         return []
     try:
         with TIMELINE_FILE.open("r", encoding="utf-8") as fh:
@@ -64,10 +71,88 @@ def _event_key(event: Dict) -> str:
     return f"ts:{timestamp}|data:{data_blob}"
 
 
+def _prompt_user_decision(token_estimate: Optional[int], full_prompt: Optional[str]) -> bool:
+    """Prompt the user for next action. Returns True if consolidation should run."""
+
+    console.print("[bold green]Command input ready[/bold green]")
+
+    if token_estimate is not None:
+        token_display = f"{token_estimate:,}"
+        summary = f"Process this timeline with the LLM (~{token_display} input tokens)."
+    else:
+        summary = "Process this timeline with the LLM."
+
+    instructions_parts = ["Ctrl+T = run now"]
+    if full_prompt:
+        instructions_parts.append("Ctrl+Y = copy prompt")
+    instructions_parts.append("Enter = submit command")
+    instructions_parts.append("Blank = skip")
+    instructions = " • ".join(instructions_parts)
+
+    toolbar_html = HTML(f"<style fg='ansigray'>{summary}</style> | " f"<style fg='ansigray'>{instructions}</style>")
+
+    session = PromptSession()
+    bindings = KeyBindings()
+
+    @bindings.add("c-t")
+    def _trigger(event):
+        event.app.exit(result=CTRL_T_TRIGGER)
+
+    @bindings.add("c-y")
+    def _copy(event):
+        def _notify(message: str, style: str) -> None:
+            console.print(f"[{style}]{message}[/{style}]")
+
+        if not full_prompt:
+            run_in_terminal(lambda: _notify("No prompt available to copy.", "yellow"))
+            return
+
+        def _copy_and_notify() -> None:
+            try:
+                pyperclip.copy(full_prompt)
+                _notify("Copied LLM prompt to system clipboard.", "green")
+            except Exception as err:  # pragma: no cover - environment dependent
+                clipboard = getattr(event.app, "clipboard", None)
+                if clipboard is None:
+                    _notify(f"Unable to copy prompt: {err}", "yellow")
+                    return
+                try:
+                    clipboard.set_text(full_prompt)
+                    _notify("Copied LLM prompt to clipboard.", "green")
+                except Exception as inner_err:  # pragma: no cover
+                    _notify(f"Unable to copy prompt: {inner_err}", "yellow")
+
+        run_in_terminal(_copy_and_notify)
+
+    user_input = session.prompt(
+        HTML("<ansigray>> </ansigray>"),
+        key_bindings=bindings,
+        bottom_toolbar=lambda: toolbar_html,
+    )
+
+    if user_input == CTRL_T_TRIGGER:
+        console.print("[green]Ctrl+T detected. Proceeding with consolidation.[/green]")
+        return True
+
+    command = user_input.strip()
+    if not command:
+        return False
+
+    lowered = command.lower()
+    if lowered in {"y", "yes", "run", "process", "proceed", "go", "start", "do it"}:
+        return True
+    if lowered in {"n", "no", "skip", "cancel", "stop", "abort"}:
+        return False
+
+    console.print(f"[yellow]Captured command:[/yellow] {command}")
+    return click.confirm("Run the LLM with this timeline now?", default=True)
+
+
 @click.command()
 def main() -> None:
     console.print("[bold cyan]Processing ActivityWatch timeline...[/bold cyan]")
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    if SNAPSHOT_ENABLED:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
 
     client = ActivityWatchClient()
     if not client.test_connection():
@@ -98,25 +183,28 @@ def main() -> None:
         console.print("[yellow]No timeline events were returned for the selected range.[/yellow]")
         return
 
-    previous_events = _load_previous_events()
-    previous_keys = {_event_key(event) for event in previous_events}
-    new_events = [event for event in all_events if _event_key(event) not in previous_keys]
+    if SNAPSHOT_ENABLED:
+        previous_events = _load_previous_events()
+        previous_keys = {_event_key(event) for event in previous_events}
+        new_events = [event for event in all_events if _event_key(event) not in previous_keys]
 
-    snapshot = {
-        "fetched_at": datetime.utcnow().isoformat() + "Z",
-        "start": start.isoformat(),
-        "end": end.isoformat(),
-        "event_count": len(all_events),
-        "events": all_events,
-    }
-    with TIMELINE_FILE.open("w", encoding="utf-8") as fh:
-        json.dump(snapshot, fh, indent=2)
+        snapshot = {
+            "fetched_at": datetime.utcnow().isoformat() + "Z",
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "event_count": len(all_events),
+            "events": all_events,
+        }
+        with TIMELINE_FILE.open("w", encoding="utf-8") as fh:
+            json.dump(snapshot, fh, indent=2)
 
-    if previous_events:
-        console.print(f"[green]Detected {len(new_events)} new event(s) since the last run.[/green]")
+        if previous_events:
+            console.print(f"[green]Detected {len(new_events)} new event(s) since the last run.[/green]")
+        else:
+            console.print("[green]Stored the first ActivityWatch snapshot for future comparisons.[/green]")
+        console.print(f"Snapshot saved to {TIMELINE_FILE}")
     else:
-        console.print("[green]Stored the first ActivityWatch snapshot for future comparisons.[/green]")
-    console.print(f"Snapshot saved to {TIMELINE_FILE}")
+        console.print("[dim]Snapshot persistence disabled. Skipping comparison and storage.[/dim]")
 
     toggl_entries: List[Dict] = []
     try:
@@ -129,16 +217,9 @@ def main() -> None:
         console.print(f"[yellow]Failed to fetch Toggl entries: {err}[/yellow]")
 
     processor = TimelineProcessor()
-    token_estimate = processor.estimate_input_tokens(all_events, toggl_entries, start, end)
-    confirm_message = "Process this timeline with the LLM to generate condensed time entries?"
-    if token_estimate is not None:
-        token_display = f"{token_estimate:,}"
-        console.print(f"[cyan]Estimated LLM input tokens: {token_display}[/cyan]")
-        confirm_message = (
-            f"Process this timeline with the LLM (~{token_display} input tokens) to generate condensed time entries?"
-        )
-
-    proceed = click.confirm(confirm_message, default=True)
+    prompt_text = processor.build_prompt(all_events, toggl_entries)
+    token_estimate = processor.estimate_input_tokens(all_events, toggl_entries, start, end, prompt=prompt_text)
+    proceed = _prompt_user_decision(token_estimate, prompt_text)
     if not proceed:
         console.print("LLM processing skipped.")
         return

@@ -76,22 +76,32 @@ class TimelineProcessor:
             timeline_data=json.dumps(formatted_events, indent=2),
         )
 
+    def build_prompt(
+        self,
+        timeline_data: List[Dict],
+        toggl_entries: List[Dict],
+    ) -> Optional[str]:
+        """Expose prompt construction to callers."""
+
+        return self._build_prompt(timeline_data, toggl_entries)
+
     def estimate_input_tokens(
         self,
         timeline_data: List[Dict],
         toggl_entries: List[Dict],
         start_time: datetime,
         end_time: datetime,
+        prompt: Optional[str] = None,
     ) -> Optional[int]:
         """Estimate the number of tokens sent to the LLM."""
-        prompt = self._build_prompt(timeline_data, toggl_entries)
-        if prompt is None:
+        prompt_text = prompt or self._build_prompt(timeline_data, toggl_entries)
+        if prompt_text is None:
             return None
 
         try:
             usage = token_counter(
                 model=self.model,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": prompt_text}],
             )
         except Exception as err:  # pragma: no cover - runtime env specific
             console.print(f"[yellow]Unable to estimate token usage: {err}[/yellow]")
