@@ -118,14 +118,6 @@ def main() -> None:
         console.print("[green]Stored the first ActivityWatch snapshot for future comparisons.[/green]")
     console.print(f"Snapshot saved to {TIMELINE_FILE}")
 
-    proceed = click.confirm(
-        "Process this timeline with the LLM to generate condensed time entries?",
-        default=True,
-    )
-    if not proceed:
-        console.print("LLM processing skipped.")
-        return
-
     toggl_entries: List[Dict] = []
     try:
         toggl_client = TogglClient()
@@ -137,6 +129,20 @@ def main() -> None:
         console.print(f"[yellow]Failed to fetch Toggl entries: {err}[/yellow]")
 
     processor = TimelineProcessor()
+    token_estimate = processor.estimate_input_tokens(all_events, toggl_entries, start, end)
+    confirm_message = "Process this timeline with the LLM to generate condensed time entries?"
+    if token_estimate is not None:
+        token_display = f"{token_estimate:,}"
+        console.print(f"[cyan]Estimated LLM input tokens: {token_display}[/cyan]")
+        confirm_message = (
+            f"Process this timeline with the LLM (~{token_display} input tokens) to generate condensed time entries?"
+        )
+
+    proceed = click.confirm(confirm_message, default=True)
+    if not proceed:
+        console.print("LLM processing skipped.")
+        return
+
     console.print(f"[bold cyan]Running {processor.model} to consolidate {len(all_events)} events...[/bold cyan]")
     result = processor.consolidate_timeline(all_events, toggl_entries, start, end)
     if not result:

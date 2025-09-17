@@ -14,6 +14,7 @@ python time.py
 - ⏰ Interactive time selection (hourly intervals)
 - 📊 Fetch timeline data from all available buckets
 - 🤖 Process timeline with LLM (LiteLLM `gpt-5-nano` by default)
+- 🧮 Preview estimated LLM input tokens before processing
 - 📋 Generate clean, grouped time blocks
 - 💾 Save results to file
 - 🎨 Rich CLI interface with tables and colors

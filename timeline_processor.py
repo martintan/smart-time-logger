@@ -7,14 +7,13 @@ import os
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from litellm import completion
+from litellm import completion, token_counter
 from rich.console import Console
 
 from entry import TimeEntryList
 
 console = Console()
 
-# Template for the full LLM prompt
 FULL_PROMPT_TEMPLATE = """
 {base_prompt}
 
@@ -39,6 +38,80 @@ class TimelineProcessor:
         self.model = model or os.getenv("LLM_MODEL", "gpt-5-nano")
         self.min_duration_minutes = min_duration_minutes or int(os.getenv("MIN_ACTIVITY_DURATION_MINUTES", "5"))
 
+    def _build_prompt(
+        self,
+        timeline_data: List[Dict],
+        toggl_entries: List[Dict],
+    ) -> Optional[str]:
+        """Construct the prompt combining static instructions and captured events."""
+        try:
+            with open("INFER_TIME_ENTRY_LOGGING.md", "r", encoding="utf-8") as fh:
+                base_prompt = fh.read()
+        except FileNotFoundError:
+            console.print("[red]INFER_TIME_ENTRY_LOGGING.md file not found[/red]")
+            return None
+
+        try:
+            with open("ACTIVITY.md", "r", encoding="utf-8") as fh:
+                user_context = fh.read()
+        except FileNotFoundError:
+            user_context = "No additional user context provided."
+
+        formatted_events: List[Dict] = []
+        for event in timeline_data:
+            formatted_events.append(
+                {
+                    "id": event.get("id", 0),
+                    "timestamp": event.get("timestamp"),
+                    "duration": event.get("duration", 0),
+                    "data": event.get("data", {}),
+                }
+            )
+
+        return FULL_PROMPT_TEMPLATE.format(
+            base_prompt=base_prompt,
+            min_duration_minutes=self.min_duration_minutes,
+            user_context=user_context,
+            toggl_entries=json.dumps(toggl_entries, indent=2),
+            timeline_data=json.dumps(formatted_events, indent=2),
+        )
+
+    def estimate_input_tokens(
+        self,
+        timeline_data: List[Dict],
+        toggl_entries: List[Dict],
+        start_time: datetime,
+        end_time: datetime,
+    ) -> Optional[int]:
+        """Estimate the number of tokens sent to the LLM."""
+        prompt = self._build_prompt(timeline_data, toggl_entries)
+        if prompt is None:
+            return None
+
+        try:
+            usage = token_counter(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as err:  # pragma: no cover - runtime env specific
+            console.print(f"[yellow]Unable to estimate token usage: {err}[/yellow]")
+            return None
+
+        if isinstance(usage, int):
+            return usage
+        if isinstance(usage, dict):
+            for key in ("input_tokens", "prompt_tokens", "token_count", "total_tokens"):
+                value = usage.get(key)
+                if isinstance(value, (int, float)):
+                    return int(value)
+            nested = usage.get("usage")
+            if isinstance(nested, dict):
+                for key in ("input_tokens", "prompt_tokens", "total_tokens"):
+                    value = nested.get(key)
+                    if isinstance(value, (int, float)):
+                        return int(value)
+        return None
+
     def consolidate_timeline(
         self,
         timeline_data: List[Dict],
@@ -47,64 +120,24 @@ class TimelineProcessor:
         end_time: datetime,
     ) -> Optional[TimeEntryList]:
         """Use LLM to consolidate and summarize timeline data"""
-
-        # Read the prompt from INFER_TIME_ENTRY_LOGGING.md
-        try:
-            with open("INFER_TIME_ENTRY_LOGGING.md", "r") as f:
-                base_prompt = f.read()
-        except FileNotFoundError:
-            console.print("[red]INFER_TIME_ENTRY_LOGGING.md file not found[/red]")
+        prompt = self._build_prompt(timeline_data, toggl_entries)
+        if prompt is None:
             return None
-
-        # Read optional user context from ACTIVITY.md
-        user_context = ""
-        try:
-            with open("ACTIVITY.md", "r") as f:
-                user_context = f.read()
-        except FileNotFoundError:
-            user_context = "No additional user context provided."
-
-        # Prepare the timeline data in the format expected by the prompt
-        formatted_events = []
-        for event in timeline_data:
-            # Keep the original structure as specified in the prompt
-            formatted_event = {
-                "id": event.get("id", 0),
-                "timestamp": event["timestamp"],
-                "duration": event.get("duration", 0),
-                "data": event.get("data", {}),
-            }
-            formatted_events.append(formatted_event)
-
-        # Create the full prompt with user context, toggl entries, and activity watch data
-        full_prompt = FULL_PROMPT_TEMPLATE.format(
-            base_prompt=base_prompt,
-            min_duration_minutes=self.min_duration_minutes,
-            user_context=user_context,
-            toggl_entries=json.dumps(toggl_entries, indent=2),
-            timeline_data=json.dumps(formatted_events, indent=2),
-        )
 
         try:
             response = completion(
                 model=self.model,
-                messages=[{"role": "user", "content": full_prompt}],
+                messages=[{"role": "user", "content": prompt}],
                 temperature=1,
                 response_format={"type": "json_object"},
             )
-
-            # Parse the JSON response and validate it with TimeEntryList
             json_response = json.loads(response.choices[0].message.content)
-
-            # Convert to TimeEntryList format if needed
             if "entries" in json_response:
                 return TimeEntryList.model_validate(json_response)
-            elif isinstance(json_response, list):
+            if isinstance(json_response, list):
                 return TimeEntryList(entries=json_response)
-            else:
-                console.print(f"[red]Unexpected response format from LLM[/red]")
-                return None
-
-        except Exception as e:
-            console.print(f"[red]Error processing with LLM: {e}[/red]")
+            console.print("[red]Unexpected response format from LLM[/red]")
+            return None
+        except Exception as err:
+            console.print(f"[red]Error processing with LLM: {err}[/red]")
             return None

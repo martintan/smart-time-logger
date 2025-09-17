@@ -61,10 +61,6 @@ class ActivityWatchClient:
             }
 
             url = f"{self.api_url}/buckets/{bucket_id}/events"
-            param_string = "&".join([f"{k}={v}" for k, v in params.items()])
-            curl_cmd = f'curl "{url}?{param_string}"'
-            console.print(f"[dim]DEBUG CURL: {curl_cmd}[/dim]")
-
             response = requests.get(url, params=params)
             response.raise_for_status()
             return response.json()
