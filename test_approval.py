@@ -18,7 +18,8 @@ def test_approval_system():
             end_date="2025-06-08", 
             end_time="10:30:00",
             duration="01:30:00",
-            project="Smart Time Logger"
+            project="Smart Time Logger",
+            task=None,
         ),
         TimeEntry(
             description="Code review and testing",
@@ -27,7 +28,8 @@ def test_approval_system():
             end_date="2025-06-08", 
             end_time="11:00:00",
             duration="00:30:00",
-            project="Smart Time Logger"
+            project="Smart Time Logger",
+            task=None,
         ),
         TimeEntry(
             description="Documentation writing",
@@ -36,7 +38,8 @@ def test_approval_system():
             end_date="2025-06-08", 
             end_time="12:00:00",
             duration="01:00:00",
-            project="Smart Time Logger"
+            project="Smart Time Logger",
+            task=None,
         )
     ]
     

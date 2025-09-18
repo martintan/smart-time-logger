@@ -118,13 +118,14 @@ def _prompt_user_decision(token_estimate: Optional[int], full_prompt: Optional[s
         def _notify(message: str, style: str) -> None:
             console.print(f"[{style}]{message}[/{style}]")
 
-        if not full_prompt:
+        prompt_text = full_prompt
+        if prompt_text is None or not prompt_text:
             run_in_terminal(lambda: _notify("No prompt available to copy.", "yellow"))
             return
 
         def _copy_and_notify() -> None:
             try:
-                pyperclip.copy(full_prompt)
+                pyperclip.copy(prompt_text)
                 _notify("Copied LLM prompt to system clipboard.", "green")
             except Exception as err:  # pragma: no cover - environment dependent
                 clipboard = getattr(event.app, "clipboard", None)
@@ -132,7 +133,7 @@ def _prompt_user_decision(token_estimate: Optional[int], full_prompt: Optional[s
                     _notify(f"Unable to copy prompt: {err}", "yellow")
                     return
                 try:
-                    clipboard.set_text(full_prompt)
+                    clipboard.set_text(prompt_text)
                     _notify("Copied LLM prompt to clipboard.", "green")
                 except Exception as inner_err:  # pragma: no cover
                     _notify(f"Unable to copy prompt: {inner_err}", "yellow")
@@ -188,27 +189,49 @@ def main() -> None:
     with console.status("[bold green]Fetching ActivityWatch data..."):
         for bucket_id in sorted(buckets.keys()):
             events = client.get_events(bucket_id, start, end)
-            if events:
-                filtered = [
-                    event
-                    for event in events
-                    if not (isinstance(event.get("data"), dict) and event["data"].get("status") == "afk")
-                ]
-                if len(filtered) != len(events):
-                    console.print(
-                        f"• {bucket_id}: {len(filtered)} events (filtered {len(events) - len(filtered)} AFK events)"
-                    )
-                else:
-                    console.print(f"• {bucket_id}: {len(filtered)} events")
-                all_events.extend(filtered)
-            else:
+            if not events:
                 console.print(f"• {bucket_id}: no events")
+                continue
+
+            filtered: List[Dict] = []
+            afk_filtered = 0
+            for event in events:
+                raw_data = event.get("data")
+                if isinstance(raw_data, dict):
+                    data: Dict[str, object] = raw_data
+                else:
+                    data = {}
+
+                if data.get("status") == "afk":
+                    afk_filtered += 1
+                    continue
+
+                # Clone the event and stamp the bucket id so downstream compression
+                # can safely group identical records from separate sources.
+                event_copy: Dict = dict(event)
+                if data:
+                    event_copy["data"] = dict(data)
+                event_copy["bucket_id"] = bucket_id
+                filtered.append(event_copy)
+
+            if not filtered:
+                console.print(f"• {bucket_id}: filtered all events (AFK or empty)")
+                continue
+
+            if afk_filtered:
+                console.print(
+                    f"• {bucket_id}: {len(filtered)} events (filtered {afk_filtered} AFK events)"
+                )
+            else:
+                console.print(f"• {bucket_id}: {len(filtered)} events")
+            all_events.extend(filtered)
 
     if not all_events:
         console.print("[yellow]No timeline events were returned for the selected range.[/yellow]")
         return
 
     all_events.sort(key=_event_sort_key)
+    raw_event_count = len(all_events)
 
     if SNAPSHOT_ENABLED:
         previous_events = _load_previous_events()
@@ -244,15 +267,32 @@ def main() -> None:
         console.print(f"[yellow]Failed to fetch Toggl entries: {err}[/yellow]")
 
     processor = TimelineProcessor()
-    prompt_text = processor.build_prompt(all_events, toggl_entries)
-    token_estimate = processor.estimate_input_tokens(all_events, toggl_entries, start, end, prompt=prompt_text)
+    # Collapse rapid-fire ActivityWatch events to keep the LLM prompt within a
+    # manageable size while retaining semantic coverage of the day.
+    compressed_events = processor.compress_events(all_events)
+
+    if compressed_events:
+        compressed_count = len(compressed_events)
+        if compressed_count != raw_event_count:
+            reduction = max(0, 100 - int(round((compressed_count / raw_event_count) * 100)))
+            console.print(
+                f"Compressed timeline: {raw_event_count} raw events → {compressed_count} aggregated events ({reduction}% fewer)."
+            )
+    else:
+        console.print("[yellow]Event compression failed; using raw events.")
+        compressed_events = all_events
+
+    prompt_text = processor.build_prompt(compressed_events, toggl_entries)
+    token_estimate = processor.estimate_input_tokens(compressed_events, toggl_entries, start, end, prompt=prompt_text)
     proceed = _prompt_user_decision(token_estimate, prompt_text)
     if not proceed:
         console.print("LLM processing skipped.")
         return
 
-    console.print(f"[bold cyan]Running {processor.model} to consolidate {len(all_events)} events...[/bold cyan]")
-    result = processor.consolidate_timeline(all_events, toggl_entries, start, end)
+    console.print(
+        f"[bold cyan]Running {processor.model} to consolidate {len(compressed_events)} aggregated events...[/bold cyan]"
+    )
+    result = processor.consolidate_timeline(compressed_events, toggl_entries, start, end)
     if not result:
         console.print("[red]LLM processing did not return any time entries.[/red]")
         return
